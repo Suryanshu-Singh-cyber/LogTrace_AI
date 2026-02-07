@@ -1,3 +1,11 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import json
+from sklearn.ensemble import IsolationForest
+import matplotlib.pyplot as plt
+from fpdf import FPDF
+
 st.sidebar.header("📂 Upload Forensic Artifacts")
 
 mft_file = st.sidebar.file_uploader("Upload MFT CSV", type=["csv"])
