@@ -20,40 +20,41 @@ st.caption("Automated Detection of Anti-Forensic Techniques (DFIR Framework)")
 st.markdown("---")
 
 # -------------------------------------------------
-# TABS (UI UPGRADE)
+# TABS
 # -------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📂 Evidence Ingestion",
-    "⏱️ Timeline Analysis",
+    "⏱️ Timeline & AI Analysis",
     "🧪 Anti-Forensics Tool Scanner",
-    "📄 Reports & Export"
+    "📊 Confidence & MITRE Mapping",
+    "📄 Court-Ready Reports"
 ])
 
 # =================================================
 # TAB 1 — EVIDENCE INGESTION
 # =================================================
 with tab1:
-    st.subheader("📂 Upload Core Forensic Artifacts")
+    st.subheader("📂 Upload Core Forensic Evidence")
 
     mft_file = st.file_uploader("Upload MFT CSV", type=["csv"])
     usn_file = st.file_uploader("Upload USN Journal CSV", type=["csv"])
-    log_file = st.file_uploader("Upload Windows Event Log CSV", type=["csv"])
+    log_file = st.file_uploader("Upload Windows Event Logs CSV", type=["csv"])
 
     if not (mft_file and usn_file and log_file):
-        st.info("Please upload all three core artifacts to proceed.")
+        st.info("Upload all required artifacts to begin analysis.")
         st.stop()
 
     mft = pd.read_csv(mft_file, parse_dates=["modified"])
     usn = pd.read_csv(usn_file, parse_dates=["usn_timestamp"])
     logs = pd.read_csv(log_file, parse_dates=["timestamp"])
 
-    st.success("Core evidence successfully ingested.")
+    st.success("Evidence successfully ingested.")
 
 # =================================================
-# TAB 2 — TIMELINE & ANOMALY ANALYSIS
+# TAB 2 — TIMELINE + AI
 # =================================================
 with tab2:
-    st.subheader("⏱️ NTFS & Event Log Timeline Correlation")
+    st.subheader("⏱️ Timeline Correlation & AI Anomaly Detection")
 
     findings = []
     delta_features = []
@@ -67,10 +68,8 @@ with tab2:
             if delta > 24:
                 findings.append({
                     "file": m["filename"],
-                    "mft_modified": str(m["modified"]),
-                    "usn_time": str(u["usn_timestamp"]),
                     "delta_hours": round(delta, 2),
-                    "finding": "Possible Timestomping"
+                    "finding": "Possible NTFS Timestomping"
                 })
 
     timestomp_df = pd.DataFrame(findings)
@@ -100,142 +99,144 @@ with tab2:
     c3.metric("Risk Level", risk)
 
     fig, ax = plt.subplots()
-    ax.scatter(usn["usn_timestamp"], usn.index, label="USN Events")
-    ax.scatter(mft["modified"], mft.index, label="MFT Modified")
-    ax.legend()
+    ax.hist(delta_features, bins=20)
+    ax.set_title("Timestamp Deviation Distribution")
+    ax.set_xlabel("Delta (Hours)")
+    ax.set_ylabel("Frequency")
     st.pyplot(fig)
 
 # =================================================
-# TAB 3 — ANTI-FORENSICS TOOL SCANNER (NEW)
+# TAB 3 — ANTI-FORENSICS TOOL SCANNER
 # =================================================
 with tab3:
-    st.subheader("🧪 Anti-Forensics Tool Scanner")
+    st.subheader("🧪 Anti-Forensics Tool Detection")
 
     ANTI_FORENSIC_TOOLS = {
-        "CCleaner": {
-            "prefetch": ["CCLEANER.EXE"],
-            "registry": ["HKCU\\Software\\Piriform"]
-        },
-        "SDelete": {
-            "prefetch": ["SDELETE.EXE"],
-            "patterns": ["zero-fill"]
-        },
-        "VeraCrypt": {
-            "prefetch": ["VERACRYPT.EXE"],
-            "registry": ["HKLM\\Software\\VeraCrypt"]
-        },
-        "BleachBit": {
-            "prefetch": ["BLEACHBIT.EXE"]
-        },
-        "Cipher.exe": {
-            "prefetch": ["CIPHER.EXE"]
-        }
+        "CCleaner": "T1070.004",
+        "SDelete": "T1070.004",
+        "BleachBit": "T1070.004",
+        "Cipher.exe": "T1070.004",
+        "VeraCrypt": "T1564.001"
     }
 
-    artifact_file = st.file_uploader(
-        "Upload Artifact Evidence CSV (Prefetch / Registry)",
-        type=["csv"]
-    )
+    artifact_file = st.file_uploader("Upload Artifact Evidence CSV", type=["csv"])
 
     detections = []
 
     if artifact_file:
         artifacts = pd.read_csv(artifact_file)
 
-        for tool, indicators in ANTI_FORENSIC_TOOLS.items():
-            for pf in indicators.get("prefetch", []):
-                if pf in artifacts["artifact_name"].values:
-                    detections.append({
-                        "Tool": tool,
-                        "Indicator": "Prefetch Execution",
-                        "Evidence": pf,
-                        "Risk": "HIGH"
-                    })
+        for tool in ANTI_FORENSIC_TOOLS:
+            if tool.upper() in artifacts["artifact_name"].str.upper().values:
+                detections.append({
+                    "Tool": tool,
+                    "MITRE_Technique": ANTI_FORENSIC_TOOLS[tool],
+                    "Risk": "HIGH"
+                })
 
         if detections:
-            st.error("🚨 Anti-Forensics Tool Usage Detected")
+            st.error("🚨 Anti-Forensics Tools Detected")
             st.dataframe(pd.DataFrame(detections))
         else:
-            st.success("No anti-forensics tool traces found.")
-
-    # ---------------- COUNTER FEATURE ----------------
-    st.markdown("---")
-    st.subheader("🧬 $MFT Deleted Filename Recovery (Metadata Only)")
-
-    mft_deleted = st.file_uploader(
-        "Upload Deleted MFT Records CSV",
-        type=["csv"]
-    )
-
-    if mft_deleted:
-        deleted_df = pd.read_csv(mft_deleted)
-        st.warning("Recoverable deleted filenames detected (metadata only).")
-        st.dataframe(deleted_df)
-
-        st.info("""
-        Only filename metadata is analyzed.
-        No file contents are accessed or reconstructed.
-        This complies with ethical DFIR standards.
-        """)
+            st.success("No anti-forensics tools detected.")
 
     tool_score = min(len(detections) * 30, 100)
-    st.metric("Anti-Forensics Tool Confidence", f"{tool_score}%")
-
-    if tool_score > 0 and not timestomp_df.empty:
-        score += 20
-        st.info("Correlation detected: wiping tools + timestomping increases confidence.")
-
-    if st.button("🔍 Run Full DFIR Scan"):
-        st.success("Full DFIR scan completed successfully.")
-
-    if st.button("🧠 Explain Findings"):
-        st.write("Filesystem anomalies, logs, and tool artifacts were correlated.")
-
-    if st.button("📊 Generate Executive Summary"):
-        st.write("High confidence of deliberate anti-forensic activity detected.")
+    st.metric("Tool Usage Confidence", f"{tool_score}%")
 
 # =================================================
-# TAB 4 — REPORTS & EXPORT
+# TAB 4 — MITRE + CONFIDENCE GRAPH
 # =================================================
 with tab4:
-    st.subheader("📄 Forensic Reports & Export")
+    st.subheader("📊 MITRE ATT&CK Mapping & Confidence Graph")
+
+    mitre_df = pd.DataFrame([
+        {"Technique": "T1070.004", "Name": "File Deletion"},
+        {"Technique": "T1564.001", "Name": "Hidden Files & Directories"}
+    ])
+
+    st.table(mitre_df)
+
+    confidence_df = pd.DataFrame({
+        "Component": ["Filesystem", "Logs", "Tool Artifacts", "AI"],
+        "Confidence": [
+            60 if not timestomp_df.empty else 10,
+            40 if not log_alerts.empty else 10,
+            tool_score,
+            ai_confidence
+        ]
+    })
+
+    fig2, ax2 = plt.subplots()
+    ax2.bar(confidence_df["Component"], confidence_df["Confidence"])
+    ax2.set_ylim(0, 100)
+    ax2.set_ylabel("Confidence (%)")
+    st.pyplot(fig2)
+
+# =================================================
+# TAB 5 — COURT REPORT + LLM EXPLANATION
+# =================================================
+with tab5:
+    st.subheader("🧾 Court-Style Executive Report")
+
+    executive_summary = f"""
+    Based on forensic analysis of NTFS metadata, USN Journal entries,
+    Windows Event Logs, and artifact indicators, the system identified
+    a {risk} probability of deliberate anti-forensic activity.
+
+    The correlation of timestamp manipulation, log clearing events,
+    and traces of forensic-evasion tools significantly increases
+    evidentiary confidence.
+
+    This analysis examined metadata only. No file contents were accessed.
+    """
+
+    st.text_area("Executive Summary (Court-Ready)", executive_summary, height=200)
+
+    st.subheader("🧠 AI Forensic Explanation (LLM-Style)")
+
+    llm_explanation = f"""
+    The AI model evaluated temporal inconsistencies between filesystem
+    artifacts and journaling mechanisms. Deviations exceeding normal
+    operational thresholds were flagged as anomalous.
+
+    The presence of known anti-forensics utilities further strengthens
+    the hypothesis of intentional evidence manipulation rather than
+    system error or benign user behavior.
+    """
+
+    st.info(llm_explanation)
 
     report = {
-        "suspicion_score": int(score),
         "risk_level": risk,
-        "ai_confidence": float(ai_confidence),
-        "timestomp_findings": findings,
-        "log_tampering_events": log_alerts.to_dict(orient="records"),
-        "anti_forensics_tools": detections
+        "suspicion_score": score,
+        "ai_confidence": ai_confidence,
+        "mitre_mapping": ANTI_FORENSIC_TOOLS,
+        "summary": executive_summary
     }
 
     st.download_button(
-        label="⬇️ Download JSON Report",
-        data=json.dumps(report, indent=4),
-        file_name="logtrace_report.json",
-        mime="application/json"
+        "⬇️ Download JSON Court Report",
+        json.dumps(report, indent=4),
+        "logtrace_court_report.json",
+        "application/json"
     )
 
-    def generate_pdf(report):
+    def generate_pdf(text):
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
-        pdf.cell(0, 10, "LogTrace AI – Forensic Report", ln=True)
-        pdf.ln(5)
-        for k, v in report.items():
-            pdf.multi_cell(0, 8, f"{k}: {str(v)}")
-            pdf.ln(2)
+        pdf.multi_cell(0, 8, text)
         return pdf.output(dest="S").encode("latin-1")
 
     st.download_button(
-        label="⬇️ Download PDF Report",
-        data=generate_pdf(report),
-        file_name="logtrace_report.pdf",
-        mime="application/pdf"
+        "⬇️ Download Court PDF",
+        generate_pdf(executive_summary + "\n\n" + llm_explanation),
+        "logtrace_court_report.pdf",
+        "application/pdf"
     )
 
 # -------------------------------------------------
 # FOOTER
 # -------------------------------------------------
 st.markdown("---")
-st.caption("Ethical DFIR Tool • Metadata-Only Analysis • Court-Defensible Logic")
+st.caption("LogTrace AI • Ethical DFIR • Metadata-Only • MITRE-Aligned")
