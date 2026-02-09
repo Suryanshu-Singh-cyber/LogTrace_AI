@@ -109,6 +109,16 @@ with tab2:
 # TAB 3 — ANTI-FORENSICS TOOL SCANNER
 # =================================================
 with tab3:
+    st.markdown("### 📥 Sample Artifact Evidence")
+
+with open("sample_artifacts.csv", "r") as f:
+    st.download_button(
+        label="⬇️ Download Sample Artifact CSV",
+        data=f.read(),
+        file_name="sample_artifacts.csv",
+        mime="text/csv"
+    )
+
     st.subheader("🧪 Anti-Forensics Tool Detection")
 
     ANTI_FORENSIC_TOOLS = {
