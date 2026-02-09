@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.ensemble import IsolationForest
 import random
 import time
+import psutil
 
 # ======================================================
 # PAGE CONFIG
@@ -39,16 +40,14 @@ st.caption("Anti-Forensics • DFIR • SOC Intelligence Platform")
 st.markdown("---")
 
 # ======================================================
-# PROFESSIONAL CSV LOADER (AUTO-DETECT + USER SELECT)
+# CSV LOADER
 # ======================================================
 def load_csv_with_timestamp(file, possible_time_cols, label):
     df = pd.read_csv(file)
     df.columns = df.columns.str.lower().str.strip()
 
-    # 1️⃣ Auto-detect common timestamp names
     time_col = next((c for c in possible_time_cols if c in df.columns), None)
 
-    # 2️⃣ If not found → user selects
     if not time_col:
         st.warning(f"⚠ No standard timestamp column detected in {label}")
         time_col = st.selectbox(
@@ -57,7 +56,6 @@ def load_csv_with_timestamp(file, possible_time_cols, label):
             key=f"{label}_time_select"
         )
 
-    # 3️⃣ Safe datetime conversion
     df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
     df = df.dropna(subset=[time_col])
 
@@ -65,14 +63,15 @@ def load_csv_with_timestamp(file, possible_time_cols, label):
     return df, time_col
 
 # ======================================================
-# TABS
+# TABS (NEW TAB ADDED)
 # ======================================================
 tabs = st.tabs([
     "📥 Evidence Intake",
     "🧠 AI Correlation",
     "🧪 Anti-Forensics Scanner",
     "🧬 MITRE ATT&CK",
-    "🚨 Live SOC Alerts"
+    "🚨 Live SOC Alerts",
+    "📡 Real-Time Monitoring"
 ])
 
 # ======================================================
@@ -109,7 +108,7 @@ with tabs[0]:
         st.success("✔ Evidence successfully ingested and normalized")
 
 # ======================================================
-# TAB 2 — AI TIMELINE CORRELATION
+# TAB 2 — AI CORRELATION
 # ======================================================
 with tabs[1]:
     st.subheader("🧠 AI Timeline Correlation")
@@ -140,16 +139,10 @@ with tabs[1]:
     c3.metric("Log Clear Events", len(log_clear))
 
 # ======================================================
-# TAB 3 — ANTI-FORENSICS TOOL SCANNER
+# TAB 3 — ANTI-FORENSICS SCANNER
 # ======================================================
 with tabs[2]:
     st.subheader("🧪 Anti-Forensics Tool Scanner")
-
-    st.download_button(
-        "⬇ Download Sample Artifact CSV",
-        "artifact_type,artifact_name,timestamp\nprefetch,CCLEANER.EXE,2024-09-12",
-        "artifact_sample.csv"
-    )
 
     art_file = st.file_uploader("Upload Artifact Evidence CSV", type="csv")
 
@@ -194,10 +187,9 @@ with tabs[3]:
     ], columns=["Technique ID", "Technique", "Evidence", "Confidence"])
 
     st.dataframe(mitre)
-    st.info("MITRE ATT&CK techniques mapped using multi-artifact correlation.")
 
 # ======================================================
-# TAB 5 — LIVE SOC ALERT SIMULATION
+# TAB 5 — LIVE SOC ALERTS
 # ======================================================
 with tabs[4]:
     st.subheader("🚨 Live SOC Alert Feed")
@@ -207,14 +199,43 @@ with tabs[4]:
             sev = random.choice(["HIGH", "MEDIUM", "LOW"])
             st.markdown(
                 f"<div class='alert {sev.lower()}'>"
-                f"<b>{sev} ALERT</b> — Anti-Forensic activity detected"
+                f"<b>{sev} ALERT</b> — Suspicious anti-forensic activity detected"
                 f"</div>",
                 unsafe_allow_html=True
             )
-            time.sleep(0.7)
+            time.sleep(0.8)
+
+# ======================================================
+# TAB 6 — REAL-TIME MONITORING (NEW)
+# ======================================================
+with tabs[5]:
+    st.subheader("📡 Live System Monitoring (SOC View)")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    cpu = psutil.cpu_percent()
+    mem = psutil.virtual_memory().percent
+    disk = psutil.disk_usage("/").percent
+    uptime = int(time.time() - psutil.boot_time()) // 60
+
+    col1.metric("CPU Usage", f"{cpu}%")
+    col2.metric("Memory Usage", f"{mem}%")
+    col3.metric("Disk Usage", f"{disk}%")
+    col4.metric("Uptime", f"{uptime} mins")
+
+    # Live charts
+    cpu_hist = [psutil.cpu_percent(interval=0.5) for _ in range(10)]
+    mem_hist = [psutil.virtual_memory().percent for _ in range(10)]
+
+    fig, ax = plt.subplots()
+    ax.plot(cpu_hist, label="CPU %")
+    ax.plot(mem_hist, label="Memory %")
+    ax.set_title("Live Resource Usage")
+    ax.legend()
+    st.pyplot(fig)
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("---")
-st.caption("ForenSight AI • MITRE-Aligned • SOC-Ready • Court-Safe DFIR")
+st.caption("ForenSight AI • SOC-Grade DFIR • MITRE Aligned • Court-Safe Evidence")
