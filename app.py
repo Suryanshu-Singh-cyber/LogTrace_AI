@@ -20,7 +20,7 @@ st.caption("Automated Detection of Anti-Forensic Techniques (DFIR Framework)")
 st.markdown("---")
 
 # -------------------------------------------------
-# FILE UPLOAD (LIVE EVIDENCE INGESTION)
+# FILE UPLOAD
 # -------------------------------------------------
 st.sidebar.header("📂 Upload Forensic Artifacts")
 
@@ -49,15 +49,15 @@ for _, m in mft.iterrows():
     related = usn[usn["filename"] == m["filename"]]
     for _, u in related.iterrows():
         delta = abs((u["usn_timestamp"] - m["modified"]).total_seconds()) / 3600
-        delta_features.append(delta)
+        delta_features.append(float(delta))
 
         if delta > 24:
             findings.append({
-                "File": m["filename"],
-                "MFT_Modified": str(m["modified"]),
-                "USN_Time": str(u["usn_timestamp"]),
-                "Delta_Hours": round(delta, 2),
-                "Finding": "Possible Timestomping"
+                "file": m["filename"],
+                "mft_modified": str(m["modified"]),
+                "usn_time": str(u["usn_timestamp"]),
+                "delta_hours": round(float(delta), 2),
+                "finding": "Possible Timestomping"
             })
 
 timestomp_df = pd.DataFrame(findings)
@@ -65,22 +65,23 @@ timestomp_df = pd.DataFrame(findings)
 # -------------------------------------------------
 # LOG TAMPERING DETECTION
 # -------------------------------------------------
-log_alerts = logs[logs["event_id"].isin([1102, 104])]
+log_alerts = logs[logs["event_id"].isin([1102, 104])].copy()
+log_alerts["timestamp"] = log_alerts["timestamp"].astype(str)
 
 # -------------------------------------------------
-# AI MODEL TRAINING (REAL)
+# AI MODEL
 # -------------------------------------------------
-ai_confidence = 0
+ai_confidence = 0.0
 if len(delta_features) >= 3:
     X = np.array(delta_features).reshape(-1, 1)
     model = IsolationForest(contamination=0.25, random_state=42)
     model.fit(X)
 
     scores = model.decision_function(X)
-    ai_confidence = round((1 - np.mean(scores)) * 100, 2)
+    ai_confidence = round(float((1 - np.mean(scores)) * 100), 2)
 
 # -------------------------------------------------
-# SCORING ENGINE
+# SCORING
 # -------------------------------------------------
 score = 0
 if not timestomp_df.empty:
@@ -101,15 +102,13 @@ c3.metric("Risk Level", risk)
 st.markdown("---")
 
 # -------------------------------------------------
-# TIMELINE VISUALIZATION
+# TIMELINE
 # -------------------------------------------------
 st.subheader("📊 Forensic Timeline Correlation")
 
 fig, ax = plt.subplots()
 ax.scatter(usn["usn_timestamp"], usn.index, label="USN Events")
 ax.scatter(mft["modified"], mft.index, label="MFT Modified")
-ax.set_xlabel("Time")
-ax.set_ylabel("Event Index")
 ax.legend()
 st.pyplot(fig)
 
@@ -131,35 +130,19 @@ else:
     st.success("No log tampering detected")
 
 # -------------------------------------------------
-# EXPLANATION
+# REPORT OBJECT (SAFE)
 # -------------------------------------------------
-st.subheader("🧠 Explainable Forensic Conclusion")
-
-st.write(f"""
-LogTrace AI identified **{risk} risk anti-forensic activity**.
-
-• NTFS timestamp inconsistencies indicate possible timestomping  
-• Windows Event Log clearing events reduce timeline reliability  
-• AI anomaly detection validates behavior statistically  
-
-Correlation across independent artifacts increases evidentiary trust.
-""")
-
-# -------------------------------------------------
-# EXPORT REPORTS
-# -------------------------------------------------
-st.markdown("---")
-st.subheader("📤 Export Forensic Report")
-
 report = {
-    "suspicion_score": score,
+    "suspicion_score": int(score),
     "risk_level": risk,
-    "ai_confidence": ai_confidence,
+    "ai_confidence": float(ai_confidence),
     "timestomp_findings": findings,
     "log_tampering_events": log_alerts.to_dict(orient="records")
 }
 
-# JSON Export
+# -------------------------------------------------
+# EXPORT JSON
+# -------------------------------------------------
 st.download_button(
     label="⬇️ Download JSON Report",
     data=json.dumps(report, indent=4),
@@ -167,7 +150,9 @@ st.download_button(
     mime="application/json"
 )
 
-# PDF Export
+# -------------------------------------------------
+# EXPORT PDF
+# -------------------------------------------------
 def generate_pdf(report):
     pdf = FPDF()
     pdf.add_page()
