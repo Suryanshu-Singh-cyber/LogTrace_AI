@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # ======================================================
-# UI STYLE (Cyber / SOC)
+# CYBER / SOC UI STYLE
 # ======================================================
 st.markdown("""
 <style>
@@ -39,6 +39,24 @@ st.caption("Anti-Forensics • DFIR • SOC Intelligence Platform")
 st.markdown("---")
 
 # ======================================================
+# SAFE CSV LOADER (AUTO-DETECTION FIX)
+# ======================================================
+def load_csv_with_timestamp(file, possible_time_cols):
+    df = pd.read_csv(file)
+    df.columns = df.columns.str.lower().str.strip()
+
+    time_col = next((c for c in possible_time_cols if c in df.columns), None)
+
+    if not time_col:
+        st.error(f"❌ Timestamp column missing. Expected one of: {possible_time_cols}")
+        st.stop()
+
+    df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
+    df = df.dropna(subset=[time_col])
+
+    return df, time_col
+
+# ======================================================
 # TABS
 # ======================================================
 tabs = st.tabs([
@@ -50,7 +68,7 @@ tabs = st.tabs([
 ])
 
 # ======================================================
-# TAB 1 — EVIDENCE
+# TAB 1 — EVIDENCE INTAKE
 # ======================================================
 with tabs[0]:
     st.subheader("📥 Evidence Intake")
@@ -63,36 +81,53 @@ with tabs[0]:
         st.info("Upload all forensic artifacts to proceed.")
         st.stop()
 
-    mft = pd.read_csv(mft_file, parse_dates=["modified"])
-    usn = pd.read_csv(usn_file, parse_dates=["usn_timestamp"])
-    logs = pd.read_csv(log_file, parse_dates=["timestamp"])
+    # ✅ ROBUST AUTO-DETECTION
+    mft, mft_time_col = load_csv_with_timestamp(
+        mft_file,
+        ["modified", "modified_time", "mtime", "last_modified", "timestamp"]
+    )
 
-    st.success("✔ Evidence successfully ingested")
+    usn, usn_time_col = load_csv_with_timestamp(
+        usn_file,
+        ["usn_timestamp", "timestamp", "event_time"]
+    )
+
+    logs, log_time_col = load_csv_with_timestamp(
+        log_file,
+        ["timestamp", "time_created", "event_time"]
+    )
+
+    st.success("✔ Evidence successfully ingested and normalized")
 
 # ======================================================
-# TAB 2 — AI CORRELATION
+# TAB 2 — AI CORRELATION (FIXED LOGIC)
 # ======================================================
 with tabs[1]:
     st.subheader("🧠 AI Timeline Correlation")
 
     deltas = []
-    for _, m in mft.iterrows():
-        related = usn[usn["filename"] == m["filename"]]
-        for _, u in related.iterrows():
-            deltas.append(
-                abs((u["usn_timestamp"] - m["modified"]).total_seconds()) / 3600
-            )
 
-    ai_conf = 0
+    # Normalize filename column
+    mft.columns = mft.columns.str.lower()
+    usn.columns = usn.columns.str.lower()
+
+    if "filename" in mft.columns and "filename" in usn.columns:
+        for _, m in mft.iterrows():
+            related = usn[usn["filename"] == m["filename"]]
+            for _, u in related.iterrows():
+                delta = abs(
+                    (u[usn_time_col] - m[mft_time_col]).total_seconds()
+                ) / 3600
+                deltas.append(float(delta))
+
+    ai_conf = 0.0
     if len(deltas) >= 3:
         model = IsolationForest(contamination=0.25, random_state=42)
-        model.fit(np.array(deltas).reshape(-1, 1))
-        ai_conf = round(
-            (1 - np.mean(model.decision_function(np.array(deltas).reshape(-1, 1)))) * 100,
-            2
-        )
+        X = np.array(deltas).reshape(-1, 1)
+        model.fit(X)
+        ai_conf = round((1 - np.mean(model.decision_function(X))) * 100, 2)
 
-    log_clear = logs[logs["event_id"].isin([1102, 104])]
+    log_clear = logs[logs.get("event_id", -1).isin([1102, 104])]
 
     c1, c2, c3 = st.columns(3)
     c1.metric("AI Confidence", f"{ai_conf}%")
@@ -100,7 +135,7 @@ with tabs[1]:
     c3.metric("Log Clear Events", len(log_clear))
 
 # ======================================================
-# TAB 3 — ANTI-FORENSICS (KEYERROR FIXED)
+# TAB 3 — ANTI-FORENSICS TOOL SCANNER (KEYERROR SAFE)
 # ======================================================
 with tabs[2]:
     st.subheader("🧪 Anti-Forensics Tool Scanner")
@@ -113,25 +148,25 @@ with tabs[2]:
 
     art_file = st.file_uploader("Upload Artifact Evidence CSV", type="csv")
 
-    detected = pd.DataFrame()
     if art_file:
         artifacts = pd.read_csv(art_file)
-
-        # 🔧 Normalize column names (KEY FIX)
         artifacts.columns = artifacts.columns.str.lower().str.strip()
 
-        possible_cols = ["artifact_name", "process", "name", "artifact"]
-        name_col = next((c for c in possible_cols if c in artifacts.columns), None)
+        name_col = next(
+            (c for c in ["artifact_name", "process", "name", "artifact"] if c in artifacts.columns),
+            None
+        )
 
         if not name_col:
-            st.error("❌ No artifact name column found in CSV.")
+            st.error("❌ No artifact name column found.")
         else:
             tools = [
                 "ccleaner.exe", "sdelete.exe",
                 "veracrypt.exe", "bleachbit.exe", "cipher.exe"
             ]
+
             detected = artifacts[
-                artifacts[name_col].str.lower().isin(tools)
+                artifacts[name_col].astype(str).str.lower().isin(tools)
             ]
 
             if not detected.empty:
@@ -141,7 +176,7 @@ with tabs[2]:
                 st.success("No anti-forensics artifacts found")
 
 # ======================================================
-# TAB 4 — MITRE ATT&CK MATRIX
+# TAB 4 — MITRE ATT&CK MAPPING
 # ======================================================
 with tabs[3]:
     st.subheader("🧬 MITRE ATT&CK Mapping")
@@ -149,13 +184,12 @@ with tabs[3]:
     mitre = pd.DataFrame([
         ["T1070.004", "File Deletion", "CCleaner / SDelete", "HIGH"],
         ["T1070.001", "Clear Event Logs", "Event ID 1102", "HIGH"],
-        ["T1564.001", "Hidden Files", "MFT anomalies", "MEDIUM"],
+        ["T1564.001", "Hidden Files", "MFT timestamp gaps", "MEDIUM"],
         ["T1027", "Obfuscated Files", "Cipher.exe usage", "MEDIUM"]
     ], columns=["Technique ID", "Technique", "Evidence", "Confidence"])
 
     st.dataframe(mitre)
-
-    st.info("MITRE techniques mapped using filesystem, registry, and log artifacts.")
+    st.info("MITRE ATT&CK techniques mapped using multi-artifact correlation.")
 
 # ======================================================
 # TAB 5 — LIVE SOC ALERT SIMULATION
@@ -165,13 +199,10 @@ with tabs[4]:
 
     if st.button("▶ Start SOC Simulation"):
         for _ in range(5):
-            severity = random.choice(["HIGH", "MEDIUM", "LOW"])
-            cls = severity.lower()
-
+            sev = random.choice(["HIGH", "MEDIUM", "LOW"])
             st.markdown(
-                f"<div class='alert {cls}'>"
-                f"<b>{severity} ALERT</b> — "
-                f"Anti-Forensic activity detected ({random.choice(['Filesystem','Logs','Tools'])})"
+                f"<div class='alert {sev.lower()}'>"
+                f"<b>{sev} ALERT</b> — Anti-Forensic activity detected"
                 f"</div>",
                 unsafe_allow_html=True
             )
