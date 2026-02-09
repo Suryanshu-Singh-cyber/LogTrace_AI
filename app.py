@@ -39,21 +39,29 @@ st.caption("Anti-Forensics • DFIR • SOC Intelligence Platform")
 st.markdown("---")
 
 # ======================================================
-# SAFE CSV LOADER (AUTO-DETECTION FIX)
+# PROFESSIONAL CSV LOADER (AUTO-DETECT + USER SELECT)
 # ======================================================
-def load_csv_with_timestamp(file, possible_time_cols):
+def load_csv_with_timestamp(file, possible_time_cols, label):
     df = pd.read_csv(file)
     df.columns = df.columns.str.lower().str.strip()
 
+    # 1️⃣ Auto-detect common timestamp names
     time_col = next((c for c in possible_time_cols if c in df.columns), None)
 
+    # 2️⃣ If not found → user selects
     if not time_col:
-        st.error(f"❌ Timestamp column missing. Expected one of: {possible_time_cols}")
-        st.stop()
+        st.warning(f"⚠ No standard timestamp column detected in {label}")
+        time_col = st.selectbox(
+            f"🕒 Select timestamp column for {label}",
+            options=df.columns,
+            key=f"{label}_time_select"
+        )
 
+    # 3️⃣ Safe datetime conversion
     df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
     df = df.dropna(subset=[time_col])
 
+    st.success(f"✔ Using '{time_col}' as timestamp for {label}")
     return df, time_col
 
 # ======================================================
@@ -79,37 +87,34 @@ with tabs[0]:
 
     if not (mft_file and usn_file and log_file):
         st.info("Upload all forensic artifacts to proceed.")
-        st.stop()
+    else:
+        mft, mft_time_col = load_csv_with_timestamp(
+            mft_file,
+            ["modified", "modified_time", "mtime", "last_modified", "timestamp"],
+            "MFT"
+        )
 
-    # ✅ ROBUST AUTO-DETECTION
-    mft, mft_time_col = load_csv_with_timestamp(
-        mft_file,
-        ["modified", "modified_time", "mtime", "last_modified", "timestamp"]
-    )
+        usn, usn_time_col = load_csv_with_timestamp(
+            usn_file,
+            ["usn_timestamp", "timestamp", "event_time", "timecreated"],
+            "USN Journal"
+        )
 
-    usn, usn_time_col = load_csv_with_timestamp(
-        usn_file,
-        ["usn_timestamp", "timestamp", "event_time"]
-    )
+        logs, log_time_col = load_csv_with_timestamp(
+            log_file,
+            ["timestamp", "time_created", "event_time", "logged_at"],
+            "Security Logs"
+        )
 
-    logs, log_time_col = load_csv_with_timestamp(
-        log_file,
-        ["timestamp", "time_created", "event_time"]
-    )
-
-    st.success("✔ Evidence successfully ingested and normalized")
+        st.success("✔ Evidence successfully ingested and normalized")
 
 # ======================================================
-# TAB 2 — AI CORRELATION (FIXED LOGIC)
+# TAB 2 — AI TIMELINE CORRELATION
 # ======================================================
 with tabs[1]:
     st.subheader("🧠 AI Timeline Correlation")
 
     deltas = []
-
-    # Normalize filename column
-    mft.columns = mft.columns.str.lower()
-    usn.columns = usn.columns.str.lower()
 
     if "filename" in mft.columns and "filename" in usn.columns:
         for _, m in mft.iterrows():
@@ -118,12 +123,12 @@ with tabs[1]:
                 delta = abs(
                     (u[usn_time_col] - m[mft_time_col]).total_seconds()
                 ) / 3600
-                deltas.append(float(delta))
+                deltas.append(delta)
 
     ai_conf = 0.0
     if len(deltas) >= 3:
-        model = IsolationForest(contamination=0.25, random_state=42)
         X = np.array(deltas).reshape(-1, 1)
+        model = IsolationForest(contamination=0.25, random_state=42)
         model.fit(X)
         ai_conf = round((1 - np.mean(model.decision_function(X))) * 100, 2)
 
@@ -131,11 +136,11 @@ with tabs[1]:
 
     c1, c2, c3 = st.columns(3)
     c1.metric("AI Confidence", f"{ai_conf}%")
-    c2.metric("Timestamp Anomalies", len(deltas))
+    c2.metric("Timestamp Correlations", len(deltas))
     c3.metric("Log Clear Events", len(log_clear))
 
 # ======================================================
-# TAB 3 — ANTI-FORENSICS TOOL SCANNER (KEYERROR SAFE)
+# TAB 3 — ANTI-FORENSICS TOOL SCANNER
 # ======================================================
 with tabs[2]:
     st.subheader("🧪 Anti-Forensics Tool Scanner")
@@ -176,7 +181,7 @@ with tabs[2]:
                 st.success("No anti-forensics artifacts found")
 
 # ======================================================
-# TAB 4 — MITRE ATT&CK MAPPING
+# TAB 4 — MITRE ATT&CK
 # ======================================================
 with tabs[3]:
     st.subheader("🧬 MITRE ATT&CK Mapping")
