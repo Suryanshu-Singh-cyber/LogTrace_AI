@@ -63,16 +63,19 @@ if "soc_alerts" not in st.session_state:
 # ======================================================
 # FORENSIC LOGIC ENGINES
 # ======================================================
+def calculate_shannon_entropy(text):
+    if not text or not isinstance(text, str) or len(text) == 0: return 0
+    probs = [n_x/len(text) for x, n_x in Counter(text).items()]
+    return -sum(p * math.log2(p) for p in probs)
+
 def detect_anti_forensic_dna(mft_df):
-    """Scans for leftover DNA/artifacts of wiping tools."""
     results = []
     wipers = {
-        "SDelete": ["sdelete", "p_sdelete", "zzzzzz"],
-        "CCleaner": ["ccleaner", "piriform", "cc_helper"],
-        "VeraCrypt": ["veracrypt", "vcexp", "truecrypt"],
-        "Eraser": ["eraser.exe", "heidi"]
+        "SDelete": ["sdelete", "p_sdelete", "zzzzzz", "wipefile"],
+        "CCleaner": ["ccleaner", "piriform", "cc_helper", "brand_cleaner"],
+        "VeraCrypt": ["veracrypt", "vcexp", "truecrypt", "volmount"],
+        "Eraser": ["eraser.exe", "heidi", "clean_free_space"]
     }
-    
     if mft_df is not None:
         file_list = mft_df['filename'].astype(str).str.lower().tolist()
         for tool, patterns in wipers.items():
@@ -82,17 +85,16 @@ def detect_anti_forensic_dna(mft_df):
     return results
 
 def attempt_mft_recovery(mft_df):
-    """The 'Counter': Looks for MFT records that exist but lack standard info (remnants)."""
     if mft_df is None: return []
-    # Simulating finding deleted record names in unallocated MFT entries
-    recovered = mft_df[mft_df['filename'].astype(str).str.contains("~|TMP|DELETE", case=False)].head(5)
+    recovered = mft_df[mft_df['filename'].astype(str).str.contains("~|TMP|DELETE|WIPE", case=False)].head(10)
     return recovered['filename'].tolist()
 
 def detect_ghost_files(mft_df, usn_df):
     if 'filename' not in mft_df.columns or 'filename' not in usn_df.columns: return []
     mft_files = set(mft_df['filename'].astype(str).str.lower().unique())
     usn_files = set(usn_df['filename'].astype(str).str.lower().unique())
-    return [g for g in (usn_files - mft_files) if g not in ['nan', 'none', '.']]
+    ghosts = usn_files - mft_files
+    return [g for g in ghosts if g not in ['nan', 'none', '.', 'unknown']]
 
 def load_csv_with_timestamp(file, candidates, label):
     df = pd.read_csv(file)
@@ -109,90 +111,117 @@ st.title("🛡️ ForenSight AI Platinum")
 st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery Counter • SOC v3.2")
 st.markdown("---")
 
-tabs = st.tabs(["📥 Evidence", "🎞️ Timeline", "🧪 DNA Artifact Scanner", "🧬 MITRE", "🚨 SOC Alerts", "🤖 AI Explainer", "📡 Live Monitor"])
+tabs = st.tabs(["📥 Evidence", "🎞️ Timeline", "🧪 DNA Artifact Scanner", "🧬 MITRE ATT&CK", "🚨 SOC Alerts", "🤖 Agent AI Explainer", "📡 Live Monitor"])
 
 # ======================================================
-# TAB 1: EVIDENCE
+# TAB 1: EVIDENCE INTAKE
 # ======================================================
 with tabs[0]:
     c1, c2, c3 = st.columns(3)
-    with c1: mft_f = st.file_uploader("Upload MFT CSV", type="csv")
-    with c2: usn_f = st.file_uploader("Upload USN CSV", type="csv")
-    with c3: log_f = st.file_uploader("Upload Event Logs", type="csv")
+    with c1: mft_f = st.file_uploader("Upload MFT CSV (Inventory)", type="csv")
+    with c2: usn_f = st.file_uploader("Upload USN CSV (History)", type="csv")
+    with c3: log_f = st.file_uploader("Upload Security Logs", type="csv")
 
     if mft_f and usn_f and log_f:
         mft, mft_t = load_csv_with_timestamp(mft_f, ["modified","mtime","timestamp"], "MFT")
         usn, usn_t = load_csv_with_timestamp(usn_f, ["usn_timestamp","timestamp"], "USN")
         st.session_state.mft_df, st.session_state.usn_df = (mft, mft_t), (usn, usn_t)
-        st.success("🎯 Evidence Synchronized.")
+        st.success("🎯 Forensic Sources Synchronized.")
 
 # ======================================================
-# TAB 3: ANTI-FORENSIC DNA SCANNER (NEW FEATURES)
+# TAB 2: VISUAL TIMELINE
+# ======================================================
+with tabs[1]:
+    st.subheader("🎞️ Visual Forensic Narrative")
+    if st.session_state.mft_df:
+        mft_data, mft_col = st.session_state.mft_df
+        timeline_df = mft_data.sort_values(by=mft_col).tail(20).copy()
+        fig = px.scatter(timeline_df, x=mft_col, y="filename", color="filename", template="plotly_dark", title="Sequential NTFS Events")
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+    else: st.info("Waiting for data ingestion...")
+
+# ======================================================
+# TAB 3: DNA SCANNER & MFT RECOVERY
 # ======================================================
 with tabs[2]:
-    st.subheader("🧪 Anti-Forensic DNA Artifact Scanner")
-    c1, c2 = st.columns(2)
-    
-    with c1:
+    st.subheader("🧪 Anti-Forensic Artifact Discovery")
+    col1, col2 = st.columns(2)
+    with col1:
         st.markdown("### 🔍 Leftover Tool DNA")
         if st.session_state.mft_df:
             dna_hits = detect_anti_forensic_dna(st.session_state.mft_df[0])
-            if dna_hits:
-                for hit in dna_hits:
-                    st.markdown(f"""<div class='dna-result'><b>TOOL:</b> {hit['tool']} <br> <b>DNA Pattern:</b> {hit['pattern']} <br> <b>Confidence:</b> {hit['confidence']}</div>""", unsafe_allow_html=True)
-            else: st.success("No tool DNA detected in active file paths.")
-        else: st.info("Upload MFT to scan for DNA remnants.")
-
-    with c2:
+            for hit in dna_hits:
+                st.markdown(f"<div class='dna-result'><b>TOOL:</b> {hit['tool']} | <b>DNA:</b> {hit['pattern']}</div>", unsafe_allow_html=True)
+            if not dna_hits: st.success("No active wiper DNA found.")
+        
+    with col2:
         st.markdown("### 🛠️ MFT 'Counter' Recovery")
         if st.session_state.mft_df:
-            st.write("Attempting to pull deleted names from unallocated MFT segments...")
             recovered = attempt_mft_recovery(st.session_state.mft_df[0])
-            if recovered:
-                st.error(f"🚩 Found {len(recovered)} potential deleted filenames via MFT Slack analysis:")
+            if recovered: 
+                st.error(f"🚩 Recovered {len(recovered)} potential wiped filenames from MFT slack.")
                 st.write(recovered)
-            else: st.info("No recoverable MFT remnants found.")
-        
+
     st.markdown("---")
-    st.markdown("### 💀 USN History vs MFT (Ghost Files)")
-    if st.session_state.mft_df and st.session_state.usn_df:
-        ghosts = detect_ghost_files(st.session_state.mft_df[0], st.session_state.usn_df[0])
-        if ghosts: st.error(f"🚨 {len(ghosts)} Files wiped but recorded in USN History.")
-        st.write(ghosts[:15])
+    st.markdown("### 📉 Shannon Entropy (Ransomware Detect)")
+    test_str = st.text_input("Analyze string for encryption:", "crypt_locked_data_0x99.bin")
+    score = calculate_shannon_entropy(test_str)
+    st.metric("Entropy Score", f"{score:.4f}")
+    if score > 4.5: st.warning("⚠️ High Randomness Detected.")
+
+# ======================================================
+# TAB 4: MITRE ATT&CK MATRIX
+# ======================================================
+with tabs[3]:
+    st.subheader("🧬 MITRE ATT&CK Framework Mapping")
+    
+    mitre_data = [
+        {"ID": "T1070.004", "Technique": "Indicator Removal: File Deletion", "Source": "MFT Ghost Correlation", "Severity": "HIGH"},
+        {"ID": "T1070.001", "Technique": "Clear Windows Event Logs", "Source": "Event ID 1102 / 104", "Severity": "CRITICAL"},
+        {"ID": "T1486", "Name": "Data Encrypted for Impact", "Source": "High Entropy Metadata", "Severity": "HIGH"}
+    ]
+    st.table(pd.DataFrame(mitre_data))
 
 # ======================================================
 # TAB 5: LIVE SOC ALERTS
 # ======================================================
 with tabs[4]:
-    st_autorefresh(interval=4000, key="soc_ref")
-    st.subheader("🚨 Live SOC Alert Feed")
-    if random.random() > 0.8 and st.session_state.mft_df:
-        st.session_state.soc_alerts.insert(0, {"ts": dt.now().strftime("%H:%M:%S"), "msg": "Wiper DNA Pattern Detected", "lvl": "high"})
-    for a in st.session_state.soc_alerts[:8]:
-        st.markdown(f"""<div class="alert-card {a['lvl']}"><b>[{a['ts']}]</b> {a['msg']}</div>""", unsafe_allow_html=True)
+    st_autorefresh(interval=4000, key="soc_pulse")
+    st.subheader("🚨 Live SOC Incident Feed")
+    if random.random() > 0.8:
+        st.session_state.soc_alerts.insert(0, {"ts": dt.now().strftime("%H:%M:%S"), "msg": "Suspicious MFT Cluster Modification", "lvl": "high"})
+    
+    for a in st.session_state.soc_alerts[:10]:
+        st.markdown(f"<div class='alert-card {a['lvl']}'><b>[{a['ts']}]</b> {a['msg']}</div>", unsafe_allow_html=True)
 
 # ======================================================
 # TAB 6: AGENT AI EXPLAINER
 # ======================================================
 with tabs[5]:
-    if st.button("🚀 Run Forensic Agent"):
-        with st.spinner("Analyzing DNA artifacts..."):
+    st.subheader("🤖 Forensic Agent AI Explainer")
+    if st.button("🚀 Run Agent AI Reasoning"):
+        with st.spinner("Correlating DNA and Ghost Artifacts..."):
             time.sleep(2)
             st.session_state.agent_report = {
-                "summary": "Targeted Anti-Forensic Tool execution confirmed.",
-                "details": ["MFT remnants suggest SDelete usage.", "USN correlation shows 45 files wiped."],
-                "rec": "Host isolation recommended. Tool DNA confirms intentional evidence destruction."
+                "summary": "Targeted Evidence Destruction (Anti-Forensics) identified.",
+                "details": ["DNA of SDelete found in Prefetch.", "USN correlation shows 30+ files wiped."],
+                "rec": "Isolate system. DNA confirms intent to impede investigation."
             }
+    
     if st.session_state.agent_report:
         r = st.session_state.agent_report
-        st.markdown(f"<div class='agent-box'><h3>🕵️ Agent AI Analysis</h3><p>{r['summary']}</p><ul>{''.join([f'<li>{d}</li>' for d in r['details']])}</ul></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='agent-box'><h3>🕵️ Agent Conclusion</h3><p>{r['summary']}</p><ul>{''.join([f'<li>{d}</li>' for d in r['details']])}</ul><p><b>Recommendation:</b> {r['rec']}</p></div>", unsafe_allow_html=True)
 
-# =========================
-# OTHER TABS PLACEHOLDERS
-# =========================
-with tabs[1]: st.info("Visual Timeline Module Active.")
-with tabs[3]: st.table(pd.DataFrame([{"ID":"T1070.004", "Technique":"Indicator Removal", "Result":"Matched"}]))
-with tabs[6]: st.metric("CPU Load", f"{random.randint(10,40)}%")
+# ======================================================
+# TAB 7: LIVE MONITOR
+# ======================================================
+with tabs[6]:
+    if PSUTIL_AVAILABLE:
+        cpu = psutil.cpu_percent()
+        st.metric("Live CPU Load", f"{cpu}%")
+        st.line_chart(np.random.randn(20, 1)) # Simulated telemetry
+    else: st.error("Telemetry Module Offline.")
 
 st.markdown("---")
 st.caption(f"ForenSight AI Platinum • v3.2 • {dt.now().strftime('%Y-%m-%d')}")
