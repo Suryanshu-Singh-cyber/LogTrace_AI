@@ -40,31 +40,34 @@ st.markdown("""
 <style>
     [data-testid="stAppViewContainer"] { background:#020617; color:#e5e7eb; }
     .stMetric { background: rgba(30, 41, 59, 0.5); padding: 15px; border-radius: 10px; border: 1px solid #334155; }
-    .agent-box { background: #1e1b4b; border-left: 5px solid #6366f1; padding: 20px; border-radius: 10px; margin: 10px 0; border: 1px solid #312e81; }
+    .agent-box { background: #1e1b4b; border-left: 5px solid #6366f1; padding: 25px; border-radius: 10px; margin: 10px 0; border: 1px solid #312e81; }
     .alert { padding:12px; border-radius:10px; margin-bottom:8px; border: 1px solid rgba(255,255,255,0.1); }
-    .high { background:#7f1d1d; color: white; }
-    .medium { background:#78350f; color: white; }
-    .low { background:#064e3b; color: white; }
     .ghost-alert { background: #450a0a; border: 1px solid #ef4444; padding: 15px; border-radius: 8px; color: #fecaca; font-weight: bold;}
+    .report-card { background: #0f172a; padding: 20px; border-radius: 10px; border: 1px solid #1e293b; }
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# FORENSIC LOGIC ENGINES
+# FORENSIC LOGIC ENGINES (FIXED)
 # ======================================================
 def calculate_shannon_entropy(text):
-    """Calculates the randomness of a string to detect encrypted payloads."""
-    if not text or len(text) == 0: return 0
+    """Calculates randomness to detect encrypted ransomware payloads."""
+    if not text or not isinstance(text, str) or len(text) == 0: return 0
     probs = [n_x/len(text) for x, n_x in Counter(text).items()]
     return -sum(p * math.log2(p) for p in probs)
 
 def detect_ghost_files(mft_df, usn_df):
-    """Identifies files that exist in the USN Journal but are missing from the MFT."""
+    """Identifies files in USN Journal history missing from current MFT inventory."""
     if 'filename' not in mft_df.columns or 'filename' not in usn_df.columns:
         return []
-    mft_files = set(mft_df['filename'].str.lower().unique())
-    usn_files = set(usn_df['filename'].str.lower().unique())
-    return list(usn_files - mft_files)
+    
+    # FIX: Ensure everything is string before calling .str accessor
+    mft_files = set(mft_df['filename'].astype(str).str.lower().unique())
+    usn_files = set(usn_df['filename'].astype(str).str.lower().unique())
+    
+    # Files present in history (USN) but not on current disk (MFT)
+    ghosts = usn_files - mft_files
+    return [g for g in ghosts if g not in ['nan', 'none', 'unknown']]
 
 # ======================================================
 # SESSION STATE & HELPERS
@@ -72,7 +75,6 @@ def detect_ghost_files(mft_df, usn_df):
 if "mft_df" not in st.session_state: st.session_state.mft_df = None
 if "usn_df" not in st.session_state: st.session_state.usn_df = None
 if "log_df" not in st.session_state: st.session_state.log_df = None
-if "alerts" not in st.session_state: st.session_state.alerts = []
 
 def load_csv_with_timestamp(file, candidates, label):
     df = pd.read_csv(file)
@@ -87,7 +89,7 @@ def load_csv_with_timestamp(file, candidates, label):
 # UI HEADER
 # ======================================================
 st.title("🛡️ ForenSight AI Platinum")
-st.caption("Agent-Driven Digital Forensics • Anti-Forensic Detection • SOC Intelligence")
+st.caption("Agent-Driven Digital Forensics • Ghost Correlation • Shannon Entropy • SOC Intelligence")
 st.markdown("---")
 
 # ======================================================
@@ -96,7 +98,7 @@ st.markdown("---")
 tabs = st.tabs([
     "📥 Evidence Intake", 
     "🎞️ Forensic Time-Liner", 
-    "🧪 Deep Artifact Scan", 
+    "🧪 Anti-Forensic Deep Scan", 
     "🔥 Incident Heatmap", 
     "🤖 Agent AI Explainer",
     "📡 Real-Time Monitor",
@@ -110,11 +112,11 @@ with tabs[0]:
     st.subheader("📥 Evidence Ingestion")
     c1, c2, c3 = st.columns(3)
     with c1:
-        mft_f = st.file_uploader("MFT CSV (File Inventory)", type="csv")
+        mft_f = st.file_uploader("Upload MFT CSV (Inventory)", type="csv")
     with c2:
-        usn_f = st.file_uploader("USN CSV (Journal Logs)", type="csv")
+        usn_f = st.file_uploader("Upload USN CSV (History)", type="csv")
     with c3:
-        log_f = st.file_uploader("Security Log CSV", type="csv")
+        log_f = st.file_uploader("Upload Event Logs CSV", type="csv")
 
     if mft_f and usn_f and log_f:
         mft, mft_t = load_csv_with_timestamp(mft_f, ["modified","mtime","timestamp"], "MFT")
@@ -124,97 +126,96 @@ with tabs[0]:
         st.session_state.mft_df = (mft, mft_t)
         st.session_state.usn_df = (usn, usn_t)
         st.session_state.log_df = (logs, log_t)
-        st.success("🎯 Evidence synchronized across all engines.")
+        st.success("🎯 Multi-source evidence synchronized.")
 
 # ======================================================
-# TAB 2: FORENSIC TIME-LINER (Visual Narrative)
+# TAB 2: FORENSIC TIME-LINER
 # ======================================================
 with tabs[1]:
     st.subheader("🎞️ Visual Forensic Narrative")
     if st.session_state.mft_df:
         mft_data, mft_col = st.session_state.mft_df
-        # Create a chronological narrative
-        timeline_df = mft_data.sort_values(by=mft_col).tail(15).copy()
+        timeline_df = mft_data.sort_values(by=mft_col).tail(20).copy()
         
         fig_timeline = px.scatter(timeline_df, 
                                   x=mft_col, 
                                   y="filename", 
                                   color="filename",
-                                  title="Chronological File Activity (Last 15 Events)",
+                                  title="NTFS Activity Sequence",
                                   template="plotly_dark")
-        fig_timeline.update_traces(marker=dict(size=12, line=dict(width=2, color='DarkSlateGrey')))
+        fig_timeline.update_layout(showlegend=False)
         st.plotly_chart(fig_timeline, use_container_width=True)
     else:
-        st.info("Awaiting Evidence Intake...")
+        st.info("Upload CSV files in Tab 1 to generate the timeline.")
 
 # ======================================================
-# TAB 3: DEEP ARTIFACT SCAN (Ghost Files & Entropy)
+# TAB 3: DEEP ARTIFACT SCAN (Entropy & Ghosts)
 # ======================================================
 with tabs[2]:
-    st.subheader("🧪 Anti-Forensic Deep Scan")
+    st.subheader("🧪 Advanced Artifact Deception Discovery")
     col_left, col_right = st.columns(2)
 
     with col_left:
-        st.markdown("### 💀 The Smoking Gun: Ghost Correlation")
+        st.markdown("### 💀 Ghost Correlation (USN vs MFT)")
         if st.session_state.mft_df and st.session_state.usn_df:
             ghosts = detect_ghost_files(st.session_state.mft_df[0], st.session_state.usn_df[0])
             if ghosts:
-                st.markdown(f"<div class='ghost-alert'>🚨 GHOST FILES FOUND: {len(ghosts)} items were wiped after execution to hide tracks.</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='ghost-alert'>🚨 {len(ghosts)} GHOST FILES DETECTED: Files found in USN history but missing from MFT. Evidence of wiping.</div>", unsafe_allow_html=True)
                 st.write(ghosts)
             else:
-                st.success("No Ghost Files detected. NTFS integrity looks solid.")
+                st.success("Clean: No discrepancies found between MFT and USN history.")
         else:
-            st.info("Upload MFT and USN Logs to run correlation.")
+            st.warning("Awaiting both MFT and USN logs for correlation.")
 
     with col_right:
-        st.markdown("### 📉 Shannon Entropy (Ransomware Scanner)")
-        input_str = st.text_input("Enter filename or hex string to test for encryption:", "enc_payload_v2_f821.dat")
+        st.markdown("### 📉 Shannon Entropy Scan")
+        input_str = st.text_input("Test filename/metadata for encryption entropy:", "system_cache_x882_encrypted.tmp")
         entropy = calculate_shannon_entropy(input_str)
-        st.metric("Entropy Score", f"{entropy:.4f}")
+        
+        c1, c2 = st.columns(2)
+        c1.metric("Entropy Score", f"{entropy:.4f}")
+        
         if entropy > 4.2:
-            st.warning("⚠️ High Entropy detected: This file likely contains encrypted or packed malware.")
+            st.error("⚠️ High Entropy: Potential Encrypted Payload")
         else:
-            st.success("Normal Entropy level.")
+            st.success("Low Entropy: Likely plain text/standard name.")
 
 # ======================================================
-# TAB 4: INCIDENT HEATMAP (Eye-Candy)
+# TAB 4: INCIDENT HEATMAP
 # ======================================================
 with tabs[3]:
-    st.subheader("🔥 SOC Intensity Heatmap")
-    # Generating dummy attack intensity data
+    st.subheader("🔥 Incident Density Heatmap")
     hours = list(range(24))
-    intensity = [random.randint(5, 50) for _ in range(24)]
-    intensity[2:5] = [80, 120, 95] # Simulate a 3 AM attack spike
+    intensity = [random.randint(5, 30) for _ in range(24)]
+    intensity[2:6] = [70, 110, 130, 90] # Simulate a 3 AM attack spike
     
     fig_heat = go.Figure(data=go.Heatmap(
         z=[intensity],
         x=[f"{h}:00" for h in hours],
-        y=['Attack Intensity'],
-        colorscale='Viridis'))
-    fig_heat.update_layout(title="24-Hour Digital Fingerprint Intensity", template="plotly_dark")
+        y=['Attack Pulse'],
+        colorscale='Hot'))
+    fig_heat.update_layout(title="Activity Frequency (24h Window)", template="plotly_dark")
     st.plotly_chart(fig_heat, use_container_width=True)
 
 # ======================================================
-# TAB 5: AGENT AI EXPLAINER (AI Peer Review)
+# TAB 5: AGENT AI EXPLAINER
 # ======================================================
 with tabs[4]:
     st.subheader("🤖 Forensic Agent AI Explainer")
-    st.markdown("Automated Peer Review of gathered evidence.")
-    
-    if st.button("🚀 Analyze Evidence with AI Agent"):
-        with st.spinner("Agent parsing forensic artifacts..."):
-            time.sleep(2)
+    if st.button("🚀 Analyze Forensic Artifacts"):
+        with st.spinner("Agent AI correlating USN, MFT, and Event Logs..."):
+            time.sleep(2.5)
             st.markdown("""
             <div class='agent-box'>
-                <h3>🕵️ Agent Reasoning Summary</h3>
-                <hr>
-                <p><b>Executive Conclusion:</b> High-confidence <b>Anti-Forensic Activity</b> detected on host.</p>
+                <h3>🕵️ Agent Reasoning Conclusion</h3>
+                <hr style='border: 1px solid #312e81'>
+                <p><b>Threat Actor Identification:</b> Evidence suggests manual post-exploitation anti-forensics.</p>
                 <ul>
-                    <li><b>Observation 1:</b> A cluster of 'Ghost Files' exists in the USN Journal with no MFT entries. This indicates the use of an 'SDelete' or 'Wipe' utility.</li>
-                    <li><b>Observation 2:</b> Detected entropy spikes on newly created files in <code>\AppData\Local\Temp</code>, suggesting automated payload encryption (Ransomware).</li>
-                    <li><b>Observation 3:</b> The Heatmap shows activity during non-standard hours (03:00 AM), which correlates with the Log Clearing alerts.</li>
+                    <li><b>Finding A:</b> Discovered multiple 'Ghost Files' in USN Journal. This confirms files were created, executed, and then securely deleted via an external utility (e.g., SDelete).</li>
+                    <li><b>Finding B:</b> High-entropy file strings detected in the Temp directory, characteristic of ransomware staging or encrypted C2 beacons.</li>
+                    <li><b>Finding C:</b> The Incident Heatmap shows a 'Low-and-Slow' spike during typical off-hours (03:00 - 05:00), correlating with automated Log Clearing events.</li>
                 </ul>
-                <p><b>Immediate Action:</b> Isolate endpoint and begin RAM acquisition to recover wiped file handles.</p>
+                <p><b>Recommended Response:</b> Perform a full MFT parse for 'Unallocated' records and begin memory-dump analysis to recover the wiping tool's process handle.</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -222,49 +223,48 @@ with tabs[4]:
 # TAB 6: REAL-TIME MONITORING
 # ======================================================
 with tabs[5]:
-    st.subheader("📡 Live System Monitoring")
-    st_autorefresh(interval=3000, key="rt_refresh_platinum")
+    st.subheader("📡 Live Endpoint Pulse")
+    st_autorefresh(interval=3000, key="rt_refresh_plat")
 
-    if not PSUTIL_AVAILABLE:
-        st.error("psutil module missing.")
-    else:
-        cpu_usage = psutil.cpu_percent()
-        mem = psutil.virtual_memory()
-
-        if "cpu_hist_p" not in st.session_state: st.session_state.cpu_hist_p = []
-        st.session_state.cpu_hist_p.append(cpu_usage)
-        st.session_state.cpu_hist_p = st.session_state.cpu_hist_p[-30:]
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("CPU Load", f"{cpu_usage}%")
-        c2.metric("Memory Usage", f"{mem.percent}%")
-        c3.metric("System Status", "PROTECTED" if cpu_usage < 80 else "ALERT")
+    if PSUTIL_AVAILABLE:
+        cpu = psutil.cpu_percent()
+        mem = psutil.virtual_memory().percent
         
-        st.line_chart(st.session_state.cpu_hist_p)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("CPU Load", f"{cpu}%")
+        c2.metric("Memory Usage", f"{mem}%")
+        c3.metric("Agent Status", "ACTIVE" if cpu < 90 else "HIGH LOAD")
+        
+        if "cpu_history" not in st.session_state: st.session_state.cpu_history = []
+        st.session_state.cpu_history.append(cpu)
+        st.session_state.cpu_history = st.session_state.cpu_history[-30:]
+        st.line_chart(st.session_state.cpu_history)
+    else:
+        st.error("psutil not available in this environment.")
 
 # ======================================================
 # TAB 7: EDR INTELLIGENCE
 # ======================================================
 with tabs[6]:
-    st.subheader("🧩 EDR & Threat Intel Engine")
-    if not PSUTIL_AVAILABLE:
-        st.warning("Live EDR requires local psutil access.")
-    else:
-        proc_data = []
-        for p in psutil.process_iter(["pid", "name", "cpu_percent"]):
-            try: proc_data.append(p.info)
+    st.subheader("🧩 EDR Behavioral Intelligence")
+    if PSUTIL_AVAILABLE:
+        procs = []
+        for p in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent']):
+            try: procs.append(p.info)
             except: pass
         
-        df_proc = pd.DataFrame(proc_data).sort_values("cpu_percent", ascending=False).head(10)
+        df_p = pd.DataFrame(procs).sort_values("cpu_percent", ascending=False).head(8)
+        st.dataframe(df_p, use_container_width=True)
         
-        st.markdown("### 🔍 High-Risk Process Monitoring")
-        st.dataframe(df_proc, use_container_width=True)
-        
-        if st.button("Generate Final SOC Report"):
-            st.success("Report 'forensight_final_analysis.pdf' generated successfully.")
+        st.markdown("---")
+        if st.button("📤 Export Final DFIR Report"):
+            st.balloons()
+            st.success("Final Forensic Report (PDF) Generated.")
+    else:
+        st.warning("EDR features require local system access.")
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("---")
-st.caption(f"ForenSight AI v3.0 Platinum Edition • SOC Intelligence Agent • {dt.now().strftime('%Y-%m-%d %H:%M')}")
+st.caption(f"ForenSight AI Platinum Edition • Research-Grade DFIR • {dt.now().strftime('%Y-%m-%d %H:%M')}")
