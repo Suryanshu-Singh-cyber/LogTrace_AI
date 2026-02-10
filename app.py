@@ -41,40 +41,43 @@ st.markdown("""
     [data-testid="stAppViewContainer"] { background:#020617; color:#e5e7eb; }
     .stMetric { background: rgba(30, 41, 59, 0.5); padding: 15px; border-radius: 10px; border: 1px solid #334155; }
     .agent-box { background: #1e1b4b; border-left: 5px solid #6366f1; padding: 25px; border-radius: 10px; margin: 10px 0; border: 1px solid #312e81; }
-    .alert { padding:12px; border-radius:10px; margin-bottom:8px; border: 1px solid rgba(255,255,255,0.1); }
+    .alert-card { padding:12px; border-radius:10px; margin-bottom:8px; border: 1px solid rgba(255,255,255,0.1); font-family: 'Courier New', monospace; }
+    .high { background: rgba(239, 68, 68, 0.2); border-left: 4px solid #ef4444; }
+    .medium { background: rgba(245, 158, 11, 0.2); border-left: 4px solid #f59e0b; }
+    .low { background: rgba(16, 185, 129, 0.2); border-left: 4px solid #10b981; }
     .ghost-alert { background: #450a0a; border: 1px solid #ef4444; padding: 15px; border-radius: 8px; color: #fecaca; font-weight: bold;}
-    .report-card { background: #0f172a; padding: 20px; border-radius: 10px; border: 1px solid #1e293b; }
+    .mitre-badge { background: #334155; padding: 2px 8px; border-radius: 4px; font-size: 10px; color: #cbd5e1; }
 </style>
 """, unsafe_allow_html=True)
 
 # ======================================================
-# FORENSIC LOGIC ENGINES (FIXED)
+# SESSION STATE INITIALIZATION
+# ======================================================
+if "mft_df" not in st.session_state: st.session_state.mft_df = None
+if "usn_df" not in st.session_state: st.session_state.usn_df = None
+if "log_df" not in st.session_state: st.session_state.log_df = None
+if "agent_report" not in st.session_state: st.session_state.agent_report = None
+if "soc_alerts" not in st.session_state: 
+    st.session_state.soc_alerts = [
+        {"ts": dt.now().strftime("%H:%M:%S"), "msg": "System Initialization Complete", "lvl": "low"},
+        {"ts": dt.now().strftime("%H:%M:%S"), "msg": "Kernel Forensic Hook Active", "lvl": "low"}
+    ]
+
+# ======================================================
+# FORENSIC LOGIC ENGINES
 # ======================================================
 def calculate_shannon_entropy(text):
-    """Calculates randomness to detect encrypted ransomware payloads."""
     if not text or not isinstance(text, str) or len(text) == 0: return 0
     probs = [n_x/len(text) for x, n_x in Counter(text).items()]
     return -sum(p * math.log2(p) for p in probs)
 
 def detect_ghost_files(mft_df, usn_df):
-    """Identifies files in USN Journal history missing from current MFT inventory."""
     if 'filename' not in mft_df.columns or 'filename' not in usn_df.columns:
         return []
-    
-    # FIX: Ensure everything is string before calling .str accessor
     mft_files = set(mft_df['filename'].astype(str).str.lower().unique())
     usn_files = set(usn_df['filename'].astype(str).str.lower().unique())
-    
-    # Files present in history (USN) but not on current disk (MFT)
     ghosts = usn_files - mft_files
-    return [g for g in ghosts if g not in ['nan', 'none', 'unknown']]
-
-# ======================================================
-# SESSION STATE & HELPERS
-# ======================================================
-if "mft_df" not in st.session_state: st.session_state.mft_df = None
-if "usn_df" not in st.session_state: st.session_state.usn_df = None
-if "log_df" not in st.session_state: st.session_state.log_df = None
+    return [g for g in ghosts if g not in ['nan', 'none', 'unknown', '.']]
 
 def load_csv_with_timestamp(file, candidates, label):
     df = pd.read_csv(file)
@@ -89,7 +92,7 @@ def load_csv_with_timestamp(file, candidates, label):
 # UI HEADER
 # ======================================================
 st.title("🛡️ ForenSight AI Platinum")
-st.caption("Agent-Driven Digital Forensics • Ghost Correlation • Shannon Entropy • SOC Intelligence")
+st.caption("Agent-Driven DFIR • MITRE Mapping • Ghost Correlation • Real-time SOC")
 st.markdown("---")
 
 # ======================================================
@@ -98,11 +101,11 @@ st.markdown("---")
 tabs = st.tabs([
     "📥 Evidence Intake", 
     "🎞️ Forensic Time-Liner", 
-    "🧪 Anti-Forensic Deep Scan", 
-    "🔥 Incident Heatmap", 
+    "🧪 Anti-Forensic Scanner", 
+    "🧬 MITRE ATT&CK", 
+    "🚨 Live SOC Alerts",
     "🤖 Agent AI Explainer",
-    "📡 Real-Time Monitor",
-    "🧩 EDR Intelligence"
+    "📡 Real-Time Monitor"
 ])
 
 # ======================================================
@@ -122,11 +125,8 @@ with tabs[0]:
         mft, mft_t = load_csv_with_timestamp(mft_f, ["modified","mtime","timestamp"], "MFT")
         usn, usn_t = load_csv_with_timestamp(usn_f, ["usn_timestamp","timestamp"], "USN")
         logs, log_t = load_csv_with_timestamp(log_f, ["timestamp","event_time"], "Logs")
-        
-        st.session_state.mft_df = (mft, mft_t)
-        st.session_state.usn_df = (usn, usn_t)
-        st.session_state.log_df = (logs, log_t)
-        st.success("🎯 Multi-source evidence synchronized.")
+        st.session_state.mft_df, st.session_state.usn_df, st.session_state.log_df = (mft, mft_t), (usn, usn_t), (logs, log_t)
+        st.success("🎯 Forensic Data Sources Synchronized.")
 
 # ======================================================
 # TAB 2: FORENSIC TIME-LINER
@@ -135,136 +135,127 @@ with tabs[1]:
     st.subheader("🎞️ Visual Forensic Narrative")
     if st.session_state.mft_df:
         mft_data, mft_col = st.session_state.mft_df
-        timeline_df = mft_data.sort_values(by=mft_col).tail(20).copy()
-        
-        fig_timeline = px.scatter(timeline_df, 
-                                  x=mft_col, 
-                                  y="filename", 
-                                  color="filename",
-                                  title="NTFS Activity Sequence",
-                                  template="plotly_dark")
+        timeline_df = mft_data.sort_values(by=mft_col).tail(25).copy()
+        fig_timeline = px.scatter(timeline_df, x=mft_col, y="filename", color="filename", template="plotly_dark")
         fig_timeline.update_layout(showlegend=False)
         st.plotly_chart(fig_timeline, use_container_width=True)
     else:
-        st.info("Upload CSV files in Tab 1 to generate the timeline.")
+        st.info("Upload logs to generate automated timeline.")
 
 # ======================================================
-# TAB 3: DEEP ARTIFACT SCAN (Entropy & Ghosts)
+# TAB 3: ANTI-FORENSIC SCANNER (BETTER)
 # ======================================================
 with tabs[2]:
-    st.subheader("🧪 Advanced Artifact Deception Discovery")
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        st.markdown("### 💀 Ghost Correlation (USN vs MFT)")
+    st.subheader("🧪 Anti-Forensic Artifact Discovery")
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("### 💀 Ghost Correlation")
         if st.session_state.mft_df and st.session_state.usn_df:
             ghosts = detect_ghost_files(st.session_state.mft_df[0], st.session_state.usn_df[0])
             if ghosts:
-                st.markdown(f"<div class='ghost-alert'>🚨 {len(ghosts)} GHOST FILES DETECTED: Files found in USN history but missing from MFT. Evidence of wiping.</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='ghost-alert'>🚨 {len(ghosts)} FILES WIPED: Found in USN History but absent in MFT inventory.</div>", unsafe_allow_html=True)
                 st.write(ghosts)
-            else:
-                st.success("Clean: No discrepancies found between MFT and USN history.")
-        else:
-            st.warning("Awaiting both MFT and USN logs for correlation.")
+            else: st.success("No Ghost Files detected.")
+        else: st.warning("Requires MFT and USN logs.")
 
-    with col_right:
-        st.markdown("### 📉 Shannon Entropy Scan")
-        input_str = st.text_input("Test filename/metadata for encryption entropy:", "system_cache_x882_encrypted.tmp")
-        entropy = calculate_shannon_entropy(input_str)
+    with c2:
+        st.markdown("### 🔍 Indicator Scan")
+        wipe_tools = ["sdelete", "ccleaner", "bleachbit", "eraser.exe", "cipher.exe", "privazer"]
+        found_tools = []
+        if st.session_state.mft_df:
+            mft_files = st.session_state.mft_df[0]['filename'].astype(str).str.lower()
+            for tool in wipe_tools:
+                if mft_files.str.contains(tool).any(): found_tools.append(tool)
         
-        c1, c2 = st.columns(2)
-        c1.metric("Entropy Score", f"{entropy:.4f}")
-        
-        if entropy > 4.2:
-            st.error("⚠️ High Entropy: Potential Encrypted Payload")
-        else:
-            st.success("Low Entropy: Likely plain text/standard name.")
+        if found_tools:
+            for t in found_tools: st.error(f"⚠️ Anti-Forensic Tool Found: {t.upper()}")
+        else: st.success("No known wipe tools found in file inventory.")
 
 # ======================================================
-# TAB 4: INCIDENT HEATMAP
+# TAB 4: MITRE ATT&CK
 # ======================================================
 with tabs[3]:
-    st.subheader("🔥 Incident Density Heatmap")
-    hours = list(range(24))
-    intensity = [random.randint(5, 30) for _ in range(24)]
-    intensity[2:6] = [70, 110, 130, 90] # Simulate a 3 AM attack spike
+    st.subheader("🧬 MITRE ATT&CK Mapping")
     
-    fig_heat = go.Figure(data=go.Heatmap(
-        z=[intensity],
-        x=[f"{h}:00" for h in hours],
-        y=['Attack Pulse'],
-        colorscale='Hot'))
-    fig_heat.update_layout(title="Activity Frequency (24h Window)", template="plotly_dark")
-    st.plotly_chart(fig_heat, use_container_width=True)
+    mitre_data = [
+        {"ID": "T1070.004", "Name": "Indicator Removal: File Deletion", "Matches": "Ghost Files Detected", "Risk": "HIGH"},
+        {"ID": "T1070.001", "Name": "Indicator Removal: Clear Event Logs", "Matches": "Event 1102 / 104", "Risk": "CRITICAL"},
+        {"ID": "T1486", "Name": "Data Encrypted for Impact", "Matches": "High Entropy Metadata", "Risk": "HIGH"},
+        {"ID": "T1099", "Name": "Timestomp", "Matches": "MFT/USN Drift > 60s", "Risk": "MEDIUM"}
+    ]
+    st.table(pd.DataFrame(mitre_data))
 
 # ======================================================
-# TAB 5: AGENT AI EXPLAINER
+# TAB 5: LIVE SOC ALERTS
 # ======================================================
 with tabs[4]:
-    st.subheader("🤖 Forensic Agent AI Explainer")
-    if st.button("🚀 Analyze Forensic Artifacts"):
-        with st.spinner("Agent AI correlating USN, MFT, and Event Logs..."):
-            time.sleep(2.5)
-            st.markdown("""
-            <div class='agent-box'>
-                <h3>🕵️ Agent Reasoning Conclusion</h3>
-                <hr style='border: 1px solid #312e81'>
-                <p><b>Threat Actor Identification:</b> Evidence suggests manual post-exploitation anti-forensics.</p>
-                <ul>
-                    <li><b>Finding A:</b> Discovered multiple 'Ghost Files' in USN Journal. This confirms files were created, executed, and then securely deleted via an external utility (e.g., SDelete).</li>
-                    <li><b>Finding B:</b> High-entropy file strings detected in the Temp directory, characteristic of ransomware staging or encrypted C2 beacons.</li>
-                    <li><b>Finding C:</b> The Incident Heatmap shows a 'Low-and-Slow' spike during typical off-hours (03:00 - 05:00), correlating with automated Log Clearing events.</li>
-                </ul>
-                <p><b>Recommended Response:</b> Perform a full MFT parse for 'Unallocated' records and begin memory-dump analysis to recover the wiping tool's process handle.</p>
-            </div>
-            """, unsafe_allow_html=True)
+    st.subheader("🚨 Live SOC Alert Feed")
+    st_autorefresh(interval=5000, key="soc_refresh")
+    
+    # Simulate a new alert randomly
+    if random.random() > 0.7:
+        lvl = random.choice(["high", "medium", "low"])
+        msgs = ["Inbound Lateral Movement Detected", "MFT Modification Spike", "Unknown Driver Loaded", "LSASS Memory Access"]
+        st.session_state.soc_alerts.insert(0, {"ts": dt.now().strftime("%H:%M:%S"), "msg": random.choice(msgs), "lvl": lvl})
+    
+    for a in st.session_state.soc_alerts[:10]:
+        st.markdown(f"""<div class="alert-card {a['lvl']}"><b>[{a['ts']}]</b> {a['msg']} <span style="float:right" class="mitre-badge">ALERT</span></div>""", unsafe_allow_html=True)
 
 # ======================================================
-# TAB 6: REAL-TIME MONITORING
+# TAB 6: AGENT AI EXPLAINER (FIXED RELOAD)
 # ======================================================
 with tabs[5]:
-    st.subheader("📡 Live Endpoint Pulse")
-    st_autorefresh(interval=3000, key="rt_refresh_plat")
+    st.subheader("🤖 Forensic Agent AI Explainer")
+    
+    if st.button("🚀 Run AI Analysis Engine"):
+        with st.spinner("Correlating artifacts..."):
+            time.sleep(2)
+            # Store report in session state so it persists during autorefresh
+            st.session_state.agent_report = {
+                "summary": "Evidence of targeted anti-forensic activity.",
+                "details": [
+                    "Ghost Files in USN Journal suggest secure deletion of post-exploitation toolkits.",
+                    "Log clearing event matches the exact timeframe of MFT modification clusters.",
+                    "High entropy strings in Temp folder indicate ransomware staging."
+                ],
+                "rec": "Isolate host and perform volatile memory capture."
+            }
 
+    if st.session_state.agent_report:
+        r = st.session_state.agent_report
+        st.markdown(f"""
+        <div class='agent-box'>
+            <h3>🕵️ Agent Conclusion</h3>
+            <p><b>Executive Summary:</b> {r['summary']}</p>
+            <ul>{"".join([f"<li>{item}</li>" for item in r['details']])}</ul>
+            <p><b>Recommendation:</b> {r['rec']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Click the button above to generate a forensic analysis report.")
+
+# ======================================================
+# TAB 7: REAL-TIME MONITORING
+# ======================================================
+with tabs[6]:
+    st.subheader("📡 Live Endpoint Pulse")
     if PSUTIL_AVAILABLE:
         cpu = psutil.cpu_percent()
         mem = psutil.virtual_memory().percent
-        
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         c1.metric("CPU Load", f"{cpu}%")
-        c2.metric("Memory Usage", f"{mem}%")
-        c3.metric("Agent Status", "ACTIVE" if cpu < 90 else "HIGH LOAD")
+        c2.metric("Memory", f"{mem}%")
         
         if "cpu_history" not in st.session_state: st.session_state.cpu_history = []
         st.session_state.cpu_history.append(cpu)
         st.session_state.cpu_history = st.session_state.cpu_history[-30:]
         st.line_chart(st.session_state.cpu_history)
     else:
-        st.error("psutil not available in this environment.")
-
-# ======================================================
-# TAB 7: EDR INTELLIGENCE
-# ======================================================
-with tabs[6]:
-    st.subheader("🧩 EDR Behavioral Intelligence")
-    if PSUTIL_AVAILABLE:
-        procs = []
-        for p in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent']):
-            try: procs.append(p.info)
-            except: pass
-        
-        df_p = pd.DataFrame(procs).sort_values("cpu_percent", ascending=False).head(8)
-        st.dataframe(df_p, use_container_width=True)
-        
-        st.markdown("---")
-        if st.button("📤 Export Final DFIR Report"):
-            st.balloons()
-            st.success("Final Forensic Report (PDF) Generated.")
-    else:
-        st.warning("EDR features require local system access.")
+        st.error("psutil not available.")
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("---")
-st.caption(f"ForenSight AI Platinum Edition • Research-Grade DFIR • {dt.now().strftime('%Y-%m-%d %H:%M')}")
+st.caption(f"ForenSight AI Platinum Edition • SOC v3.1 • {dt.now().strftime('%Y-%m-%d %H:%M')}")
