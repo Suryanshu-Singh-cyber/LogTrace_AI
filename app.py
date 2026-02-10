@@ -1,3 +1,5 @@
+import datetime
+from collections import defaultdict
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -66,8 +68,10 @@ tabs = st.tabs([
     "🧪 Anti-Forensics",
     "🧬 MITRE",
     "🚨 SOC Alerts",
-    "📡 Real-Time Monitoring"
+    "📡 Real-Time Monitoring",
+    "🧩 EDR & Threat Intel"
 ])
+
 
 # ======================================================
 # TAB 1 — EVIDENCE
@@ -194,6 +198,141 @@ with tabs[5]:
             pred = model.predict([[total_cpu]])
             if pred[0] == -1:
                 anomaly = "ANOMALY"
+
+with tabs[6]:
+    st.subheader("🧩 EDR & Threat Intelligence Engine")
+
+    if not PSUTIL_AVAILABLE:
+        st.warning("EDR simulation requires psutil")
+    else:
+        # -------------------------------
+        # PER-PROCESS ANOMALY SCORING
+        # -------------------------------
+        st.markdown("### 🔍 Per-Process Anomaly Scoring")
+
+        proc_data = []
+        for p in psutil.process_iter(["pid","name","cpu_percent","ppid"]):
+            proc_data.append(p.info)
+
+        df_proc = pd.DataFrame(proc_data).fillna(0)
+
+        if len(df_proc) > 10:
+            model = IsolationForest(contamination=0.15, random_state=42)
+            X = df_proc[["cpu_percent"]]
+            df_proc["anomaly"] = model.fit_predict(X)
+            df_proc["risk_score"] = df_proc["cpu_percent"] * (df_proc["anomaly"] == -1)
+
+        suspicious = df_proc[df_proc["anomaly"] == -1].sort_values("risk_score", ascending=False)
+
+        st.dataframe(suspicious[["pid","name","cpu_percent","risk_score"]].head(5),
+                     use_container_width=True)
+
+        # -------------------------------
+        # PROCESS TREE (SIMPLIFIED)
+        # -------------------------------
+        st.markdown("### 🌳 Process Parent-Child Tree")
+
+        tree = defaultdict(list)
+        for _, r in df_proc.iterrows():
+            tree[int(r["ppid"])].append(int(r["pid"]))
+
+        for parent, children in list(tree.items())[:5]:
+            st.write(f"🧩 Parent PID {parent} → Children: {children}")
+
+        # -------------------------------
+        # ATT&CK AUTO-MAPPING
+        # -------------------------------
+        st.markdown("### 🧬 ATT&CK Auto-Mapping")
+
+        attack_map = []
+        for _, r in suspicious.head(5).iterrows():
+            attack_map.append({
+                "Process": r["name"],
+                "Technique": "T1059 Command Execution",
+                "Confidence": min(95, int(r["risk_score"] + 40))
+            })
+
+        df_attack = pd.DataFrame(attack_map)
+        st.table(df_attack)
+
+        # -------------------------------
+        # KILL CHAIN VIEW
+        # -------------------------------
+        st.markdown("### ☠ SOC Kill-Chain View")
+
+        kill_chain = [
+            "Reconnaissance",
+            "Execution",
+            "Persistence",
+            "Privilege Escalation",
+            "Defense Evasion",
+            "Impact"
+        ]
+
+        for step in kill_chain:
+            st.write(f"➡ {step}")
+
+        # -------------------------------
+        # HEAT-BASED SEVERITY SCORE
+        # -------------------------------
+        st.markdown("### 🔥 SOC Severity Heat Score")
+
+        heat_score = int(suspicious["risk_score"].sum()) if not suspicious.empty else 0
+
+        if heat_score > 150:
+            st.error(f"🔥 CRITICAL SOC SCORE: {heat_score}")
+        elif heat_score > 70:
+            st.warning(f"⚠ HIGH SOC SCORE: {heat_score}")
+        else:
+            st.success(f"✅ NORMAL SOC SCORE: {heat_score}")
+
+        # -------------------------------
+        # MULTI-HOST SIMULATION
+        # -------------------------------
+        st.markdown("### 🖥 Multi-Host SOC View")
+
+        hosts = ["HOST-01","HOST-02","HOST-03"]
+        host_data = []
+
+        for h in hosts:
+            host_data.append({
+                "Host": h,
+                "CPU": random.randint(10,95),
+                "Alerts": random.randint(0,4)
+            })
+
+        st.dataframe(pd.DataFrame(host_data), use_container_width=True)
+
+        # -------------------------------
+        # AGENT → SERVER ARCHITECTURE
+        # -------------------------------
+        st.markdown("### 🛰 Agent → SOC Server Architecture")
+
+        st.code("""
+[Endpoint Agent]
+     |
+     |  (Process, Logs, Metrics)
+     v
+[Collector / Queue]
+     |
+     v
+[SOC Correlation Engine]
+     |
+     v
+[SIEM / Analyst Dashboard]
+        """)
+
+        # -------------------------------
+        # EXPORT SOC REPORT
+        # -------------------------------
+        st.markdown("### 📤 Export SOC Report")
+
+        if st.button("Generate SOC Report"):
+            report = suspicious.copy()
+            report["Generated"] = datetime.datetime.now()
+            report.to_csv("soc_report.csv", index=False)
+            st.success("SOC report generated (soc_report.csv)")
+
 
         # ---------- METRICS ----------
         c1,c2,c3 = st.columns(3)
