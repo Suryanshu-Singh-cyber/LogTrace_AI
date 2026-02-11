@@ -1,5 +1,5 @@
-# ======================================================
-# FORENSIGHT AI PLATINUM v3.5 (STABLE AGENT BUILD)
+# TRINETRA AI v3.5 (STABLE AGENT BUILD)
+
 # ======================================================
 
 import datetime
@@ -32,7 +32,7 @@ from streamlit_autorefresh import st_autorefresh
 # PAGE CONFIG
 # ======================================================
 st.set_page_config(
-    page_title="ForenSight AI Platinum | DFIR Agent",
+   page_title="Trinetra AI | DFIR Agent",
     page_icon="🛡️",
     layout="wide"
 )
@@ -101,7 +101,7 @@ def load_csv_with_timestamp(file, candidates, label):
 # ======================================================
 # UI HEADER
 # ======================================================
-st.title("🛡️ ForenSight AI Platinum")
+st.title("🔱 Trinetra AI")
 st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery • SOC v3.5")
 st.markdown("---")
 
@@ -178,7 +178,7 @@ with tabs[4]:
     if random.random() > 0.85:
         st.session_state.soc_alerts.insert(0,{
             "ts": dt.now().strftime("%H:%M:%S"),
-            "msg":"Suspicious Artifact Detected",
+           "msg": "Trinetra AI v3.5 Active",
             "lvl":"high"
         })
 
@@ -459,4 +459,4 @@ with tabs[6]:
 # FOOTER
 # ======================================================
 st.markdown("---")
-st.caption(f"ForenSight AI Platinum v3.5 • {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"Trinetra AI v3.5 • {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
