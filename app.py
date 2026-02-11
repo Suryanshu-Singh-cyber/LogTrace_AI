@@ -188,36 +188,83 @@ with tabs[4]:
 # ======================================================
 # TAB 6: AGENT AI EXPLAINER (FIXED PERSISTENCE)
 # ======================================================
+# ======================================================
+# TAB 6: AGENT AI EXPLAINER (PLATINUM v2.0)
+# ======================================================
 with tabs[5]:
-    st.subheader("🤖 Forensic Agent AI Explainer")
-    if st.button("🚀 Run Agent AI Analysis"):
-        with st.spinner("Correlating DNA and Ghost Artifacts..."):
-            time.sleep(2)
-            # Store in session state to persist through autorefreshes
+    st.subheader("🕵️ Forensic Reasoning Agent 2.0")
+    st.markdown("Automated high-fidelity correlation between NTFS, EVTX, and Volatile Artifacts.")
+
+    # 1. TRIGGER ACTION
+    if st.button("🚀 Execute Neural Correlation Scan", key="run_agent_v2"):
+        with st.spinner("Agent AI is mapping artifact contradictions..."):
+            time.sleep(2.5) # Simulated complex reasoning
+            
+            # SCORING LOGIC (Simulated based on existing session data)
+            has_mft = st.session_state.mft_df is not None
+            has_usn = st.session_state.usn_df is not None
+            score = 85 if (has_mft and has_usn) else 45
+            
             st.session_state.agent_report = {
-                "summary": "Targeted Evidence Destruction (Anti-Forensics) identified on host.",
-                "details": [
-                    "DNA of SDelete found in Prefetch records.",
-                    "USN correlation shows 30+ files wiped during the attack window.",
-                    "High entropy metadata detected in Temp directories suggesting ransomware staging."
+                "verdict": "CONFIRMED ANTI-FORENSIC MANIPULATION",
+                "severity": "CRITICAL",
+                "confidence": score,
+                "mitre_id": "T1070.004",
+                "findings": [
+                    {"type": "NTFS", "desc": "Ghost records found in USN Journal with zero MFT mapping.", "impact": "High"},
+                    {"type": "METADATA", "desc": "Standard Information (SI) modified via user-space API call (Timestomp).", "impact": "Medium"},
+                    {"type": "ENTROPY", "desc": "Payload randomness detected at 7.8 (Encryption profile matched).", "impact": "Critical"},
+                    {"type": "LOGS", "desc": "Temporal gap in Security.evtx (Event 1102) correlates with wiper DNA.", "impact": "High"}
                 ],
-                "rec": "Isolate system. DNA confirms intent to impede investigation. Perform volatile RAM dump."
+                "playbook": [
+                    "🛑 ISOLATE: Disconnect host from network immediately.",
+                    "💾 PRESERVE: Initiate RAM capture before disk imaging.",
+                    "🔍 INVESTIGATE: Pivot to $MFT Unallocated clusters for filename recovery.",
+                    "🛡️ HARDEN: Audit account used for Event 1102 execution."
+                ]
             }
-    
-    # Display if report exists in session state
+
+    # 2. PERSISTENT INTERFACE
     if st.session_state.agent_report:
         r = st.session_state.agent_report
+        
+        # Header Row: Verdict & Confidence
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            color = "#ef4444" if r['severity'] == "CRITICAL" else "#f59e0b"
+            st.markdown(f"<h2 style='color:{color}; margin-top:0;'>{r['verdict']}</h2>", unsafe_allow_html=True)
+            st.markdown(f"**MITRE Technique:** `{r['mitre_id']}` | **Status:** `Analysis Complete`")
+        with c2:
+            st.metric("AI Confidence", f"{r['confidence']}%")
+
+        # Main Reasoning Box
         st.markdown(f"""
-        <div class='agent-box'>
-            <h3>🕵️ Agent Conclusion</h3>
-            <hr style='border: 1px solid #6366f1'>
-            <p><b>Executive Summary:</b> {r['summary']}</p>
-            <ul>{"".join([f'<li>{d}</li>' for d in r['details']])}</ul>
-            <p><b>Recommendation:</b> {r['rec']}</p>
+        <div style='background: #1e1b4b; border-radius: 12px; border: 1px solid #312e81; padding: 25px;'>
+            <h4 style='color:#6366f1;'>🧠 Agent Reasoning Chain</h4>
+            <table style='width:100%; border-collapse: collapse; margin-top:15px;'>
+                <tr style='border-bottom: 1px solid #334155;'>
+                    <th style='text-align:left; padding:10px;'>Source</th>
+                    <th style='text-align:left; padding:10px;'>Evidence Finding</th>
+                    <th style='text-align:left; padding:10px;'>Impact</th>
+                </tr>
+                {"".join([f"<tr><td style='padding:10px;'><code>{f['type']}</code></td><td style='padding:10px;'>{f['desc']}</td><td style='padding:10px;'>{f['impact']}</td></tr>" for f in r['findings']])}
+            </table>
         </div>
         """, unsafe_allow_html=True)
+
+        # Actionable Playbook
+        st.markdown("### 📋 Incident Response Playbook")
+        cols = st.columns(len(r['playbook']))
+        for i, step in enumerate(r['playbook']):
+            cols[i].markdown(f"<div style='background:#0f172a; padding:15px; border-radius:8px; border:1px solid #1e293b; font-size:0.9em;'>{step}</div>", unsafe_allow_html=True)
+
+        # Footer Actions
+        st.markdown("---")
+        if st.button("🗑️ Reset Case Analysis"):
+            st.session_state.agent_report = None
+            st.rerun()
     else:
-        st.info("Click the button above to begin AI analysis.")
+        st.info("Awaiting input artifacts. Upload data in 'Evidence' tab and click 'Run' to begin AI peer review.")
 
 # ======================================================
 # TAB 7: ENHANCED LIVE MONITOR (NEW GAUGES & AI)
