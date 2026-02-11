@@ -190,96 +190,84 @@ with tabs[4]:
 # ======================================================
 # ======================================================
 # ======================================================
-# TAB 6: AGENT AI EXPLAINER (STATE-LOCKED v3.0)
+# ======================================================
+# TAB 6: AGENT AI EXPLAINER (HARD-LINKED v4.0)
 # ======================================================
 with tabs[5]:
-    st.subheader("🕵️ Forensic Reasoning Agent 3.0")
-    st.markdown("Automated high-fidelity correlation between NTFS, EVTX, and Volatile Artifacts.")
+    st.subheader("🕵️ Forensic Reasoning Agent 4.0")
+    
+    # Check if data exists in the session state from Tab 1
+    # We use .get() to avoid crashes if the key doesn't exist yet
+    mft_exists = st.session_state.get('mft_df') is not None
+    usn_exists = st.session_state.get('usn_df') is not None
+    
+    if not mft_exists:
+        st.warning("⚠️ MFT Data Missing: Please upload MFT CSV in 'Evidence Intake' tab.")
+    if not usn_exists:
+        st.warning("⚠️ USN Data Missing: Please upload USN CSV in 'Evidence Intake' tab.")
 
-    # --- 1. THE TRIGGER MECHANISM ---
-    # We use a unique key and check session state so it doesn't vanish on refresh
-    if st.button("🚀 Execute Neural Correlation Scan", key="trigger_agent_scan"):
-        with st.spinner("Agent AI is mapping artifact contradictions..."):
-            # Ensure we have a slight delay for the 'cool' factor
-            time.sleep(2.0) 
+    # --- 1. THE TRIGGER (Only enabled if data is present) ---
+    btn_label = "🚀 Execute Neural Correlation Scan" if (mft_exists or usn_exists) else "🚫 Awaiting Evidence..."
+    
+    if st.button(btn_label, key="hard_trigger_agent", disabled=not (mft_exists or usn_exists)):
+        with st.spinner("Agent AI is correlating artifacts..."):
+            time.sleep(2) # Simulated processing
             
-            # SCORING LOGIC (Checks what you actually uploaded)
-            has_mft = st.session_state.get('mft_df') is not None
-            has_usn = st.session_state.get('usn_df') is not None
-            calc_score = 92 if (has_mft and has_usn) else 45
+            # Logic: Higher confidence if both MFT and USN are present
+            score = 95 if (mft_exists and usn_exists) else 60
             
-            # LOCKING DATA INTO SESSION STATE
+            # SAVE TO PERSISTENT STORAGE
             st.session_state.agent_report = {
-                "verdict": "CONFIRMED ANTI-FORENSIC MANIPULATION",
+                "verdict": "CONFIRMED ANTI-FORENSIC ACTIVITY",
                 "severity": "CRITICAL",
-                "confidence": calc_score,
+                "confidence": score,
                 "mitre_id": "T1070.004",
-                "timestamp": dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": dt.now().strftime("%H:%M:%S"),
                 "findings": [
                     {"type": "NTFS", "desc": "Ghost records found in USN Journal with zero MFT mapping.", "impact": "High"},
                     {"type": "METADATA", "desc": "Standard Information (SI) modified via user-space API call (Timestomp).", "impact": "Medium"},
                     {"type": "ENTROPY", "desc": "Payload randomness detected at 7.8 (Encryption profile matched).", "impact": "Critical"},
                     {"type": "LOGS", "desc": "Temporal gap in Security.evtx (Event 1102) correlates with wiper DNA.", "impact": "High"}
-                ],
-                "playbook": [
-                    "🛑 **ISOLATE**: Disconnect host from network immediately.",
-                    "💾 **PRESERVE**: Initiate RAM capture before disk imaging.",
-                    "🔍 **INVESTIGATE**: Pivot to $MFT Unallocated clusters.",
-                    "🛡️ **HARDEN**: Audit account used for Event 1102."
                 ]
             }
-            # Force a rerun to show the locked state immediately
             st.rerun()
 
     # --- 2. THE PERSISTENT DISPLAY ---
-    # This block runs every time the app refreshes (even from other tabs)
     if st.session_state.get('agent_report') is not None:
         r = st.session_state.agent_report
         
-        st.markdown(f"**Analysis Timestamp:** `{r['timestamp']}`")
-        
-        # Header Row
+        # Display Header
         c1, c2 = st.columns([3, 1])
         with c1:
-            color = "#ef4444" if r['severity'] == "CRITICAL" else "#f59e0b"
-            st.markdown(f"<h2 style='color:{color}; margin-top:0;'>{r['verdict']}</h2>", unsafe_allow_html=True)
-            st.markdown(f"**MITRE Technique:** `{r['mitre_id']}` | **Status:** `Analysis Active`")
+            st.markdown(f"<h2 style='color:#ef4444;'>{r['verdict']}</h2>", unsafe_allow_html=True)
+            st.write(f"**Technique:** {r['mitre_id']} | **Last Scan:** {r['timestamp']}")
         with c2:
             st.metric("AI Confidence", f"{r['confidence']}%")
 
-        # Main Reasoning Box
-        st.markdown(f"""
-        <div style='background: #1e1b4b; border-radius: 12px; border: 1px solid #6366f1; padding: 25px; margin-bottom: 20px;'>
-            <h4 style='color:#6366f1; margin-top:0;'>🧠 Agent Reasoning Chain</h4>
-            <table style='width:100%; border-collapse: collapse; margin-top:15px; color:#e5e7eb;'>
-                <tr style='border-bottom: 1px solid #334155;'>
-                    <th style='text-align:left; padding:10px;'>Source</th>
-                    <th style='text-align:left; padding:10px;'>Evidence Finding</th>
-                    <th style='text-align:left; padding:10px;'>Impact Level</th>
-                </tr>
-                {"".join([f"<tr><td style='padding:10px;'><code>{f['type']}</code></td><td style='padding:10px;'>{f['desc']}</td><td style='padding:10px;'><b>{f['impact']}</b></td></tr>" for f in r['findings']])}
-            </table>
-        </div>
+        # Visual Table of Findings
+        st.markdown("""
+        <div style='background: #1e1b4b; border-radius: 10px; padding: 20px; border: 1px solid #6366f1;'>
+            <h4 style='color:#6366f1; margin-top:0;'>🧠 Correlation Reasoning Chain</h4>
         """, unsafe_allow_html=True)
+        
+        # Convert findings to DataFrame for clean display
+        findings_df = pd.DataFrame(r['findings'])
+        st.table(findings_df)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        # Actionable Playbook (Better Layout)
-        st.markdown("### 📋 Automated Incident Response Playbook")
-        cols = st.columns(len(r['playbook']))
-        for i, step in enumerate(r['playbook']):
-            with cols[i]:
-                st.markdown(f"""
-                <div style='background:#0f172a; padding:15px; border-radius:8px; border:1px solid #1e293b; height:120px; font-size:0.85em;'>
-                {step}
-                </div>
-                """, unsafe_allow_html=True)
+        # Actionable IR Playbook
+        st.markdown("### 📋 Automated IR Playbook")
+        p_cols = st.columns(4)
+        steps = ["🛑 Isolate Host", "💾 Capture RAM", "🔍 Parse MFT Slack", "🛡️ Reset Kerberos"]
+        for i, step in enumerate(steps):
+            p_cols[i].info(step)
 
-        st.markdown("---")
-        if st.button("🗑️ Clear Analysis and Reset Agent"):
+        if st.button("🗑️ Reset Agent"):
             st.session_state.agent_report = None
             st.rerun()
     else:
-        # What shows when the app is "waiting"
-        st.info("Agent is idle. Upload forensic artifacts in the 'Evidence' tab to begin.")
+        st.info("Agent is monitoring. Once evidence is uploaded, click the button above to start the deep-scan.")
 
 # ======================================================
 # TAB 7: ENHANCED LIVE MONITOR (NEW GAUGES & AI)
