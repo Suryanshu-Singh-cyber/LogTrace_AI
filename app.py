@@ -48,6 +48,7 @@ st.markdown("""
     .ghost-alert { background: #450a0a; border: 1px solid #ef4444; padding: 15px; border-radius: 8px; color: #fecaca; font-weight: bold;}
     .mitre-badge { background: #334155; padding: 2px 8px; border-radius: 4px; font-size: 10px; color: #cbd5e1; }
     .dna-result { background: #0f172a; padding: 10px; border: 1px solid #1e293b; border-radius: 5px; margin-top: 5px; }
+    .monitor-card { background: #0f172a; padding: 20px; border-radius: 12px; border: 1px solid #1e293b; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -57,6 +58,8 @@ st.markdown("""
 if "mft_df" not in st.session_state: st.session_state.mft_df = None
 if "usn_df" not in st.session_state: st.session_state.usn_df = None
 if "agent_report" not in st.session_state: st.session_state.agent_report = None
+if "cpu_history" not in st.session_state: st.session_state.cpu_history = []
+if "net_sent_history" not in st.session_state: st.session_state.net_sent_history = []
 if "soc_alerts" not in st.session_state: 
     st.session_state.soc_alerts = [{"ts": dt.now().strftime("%H:%M:%S"), "msg": "Forensic Engine Online", "lvl": "low"}]
 
@@ -108,7 +111,7 @@ def load_csv_with_timestamp(file, candidates, label):
 # UI HEADER
 # ======================================================
 st.title("🛡️ ForenSight AI Platinum")
-st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery Counter • SOC v3.2")
+st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery Counter • SOC v3.3")
 st.markdown("---")
 
 tabs = st.tabs(["📥 Evidence", "🎞️ Timeline", "🧪 DNA Artifact Scanner", "🧬 MITRE ATT&CK", "🚨 SOC Alerts", "🤖 Agent AI Explainer", "📡 Live Monitor"])
@@ -214,14 +217,65 @@ with tabs[5]:
         st.markdown(f"<div class='agent-box'><h3>🕵️ Agent Conclusion</h3><p>{r['summary']}</p><ul>{''.join([f'<li>{d}</li>' for d in r['details']])}</ul><p><b>Recommendation:</b> {r['rec']}</p></div>", unsafe_allow_html=True)
 
 # ======================================================
-# TAB 7: LIVE MONITOR
+# TAB 7: ENHANCED LIVE MONITOR
 # ======================================================
 with tabs[6]:
+    st.subheader("📡 Advanced Real-Time Telemetry")
+    st_autorefresh(interval=2000, key="monitor_loop")
+    
     if PSUTIL_AVAILABLE:
-        cpu = psutil.cpu_percent()
-        st.metric("Live CPU Load", f"{cpu}%")
-        st.line_chart(np.random.randn(20, 1)) # Simulated telemetry
-    else: st.error("Telemetry Module Offline.")
+        # Data Collection
+        cpu_p = psutil.cpu_percent()
+        mem = psutil.virtual_memory()
+        net = psutil.net_io_counters()
+        
+        # Anomaly Detection Logic
+        st.session_state.cpu_history.append(cpu_p)
+        if len(st.session_state.cpu_history) > 50: st.session_state.cpu_history.pop(0)
+        
+        anomaly_flag = "Normal"
+        if len(st.session_state.cpu_history) > 20:
+            clf = IsolationForest(contamination=0.05)
+            preds = clf.fit_predict(np.array(st.session_state.cpu_history).reshape(-1,1))
+            if preds[-1] == -1: anomaly_flag = "⚠️ ANOMALY DETECTED"
 
+        # Row 1: Visual Gauges
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            fig_cpu = go.Figure(go.Indicator(
+                mode = "gauge+number", value = cpu_p, title = {'text': "CPU Usage (%)"},
+                gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "#6366f1"}, 
+                         'steps': [{'range': [0, 70], 'color': "gray"}, {'range': [70, 100], 'color': "red"}]}))
+            fig_cpu.update_layout(height=250, margin=dict(t=50, b=0, l=20, r=20), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+            st.plotly_chart(fig_cpu, use_container_width=True)
+            
+        with c2:
+            fig_mem = go.Figure(go.Indicator(
+                mode = "gauge+number", value = mem.percent, title = {'text': "Memory Usage (%)"},
+                gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "#10b981"}}))
+            fig_mem.update_layout(height=250, margin=dict(t=50, b=0, l=20, r=20), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+            st.plotly_chart(fig_mem, use_container_width=True)
+
+        with c3:
+            st.markdown(f"<div class='monitor-card'><h3 style='color:#ef4444'>AI Forensic Status</h3><h1>{anomaly_flag}</h1><p>Real-time Isolation Forest Outlier Analysis</p></div>", unsafe_allow_html=True)
+
+        # Row 2: Networking & Details
+        st.markdown("---")
+        c4, c5 = st.columns([2, 1])
+        with c4:
+            st.write("📊 **Resource Utilization Timeline**")
+            st.line_chart(st.session_state.cpu_history)
+        with c5:
+            st.write("🌐 **Network Exfiltration Check**")
+            st.table({
+                "Interface Metric": ["Data Sent", "Data Received", "Total Packets Out", "Total Packets In"],
+                "Current Value": [f"{net.bytes_sent / (1024*1024):.2f} MB", f"{net.bytes_recv / (1024*1024):.2f} MB", net.packets_sent, net.packets_recv]
+            })
+
+    else: st.error("Telemetry sensors offline. Local psutil access required.")
+
+# ======================================================
+# FOOTER
+# ======================================================
 st.markdown("---")
-st.caption(f"ForenSight AI Platinum • v3.2 • {dt.now().strftime('%Y-%m-%d')}")
+st.caption(f"ForenSight AI Platinum • v3.3 • {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
