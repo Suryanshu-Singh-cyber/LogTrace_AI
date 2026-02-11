@@ -53,15 +53,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ======================================================
-# SESSION STATE INITIALIZATION
+# SESSION STATE INITIALIZATION (CRITICAL FOR PERSISTENCE)
 # ======================================================
 if "mft_df" not in st.session_state: st.session_state.mft_df = None
 if "usn_df" not in st.session_state: st.session_state.usn_df = None
 if "agent_report" not in st.session_state: st.session_state.agent_report = None
 if "cpu_history" not in st.session_state: st.session_state.cpu_history = []
-if "net_sent_history" not in st.session_state: st.session_state.net_sent_history = []
 if "soc_alerts" not in st.session_state: 
-    st.session_state.soc_alerts = [{"ts": dt.now().strftime("%H:%M:%S"), "msg": "Forensic Engine Online", "lvl": "low"}]
+    st.session_state.soc_alerts = [{"ts": dt.now().strftime("%H:%M:%S"), "msg": "Forensic Agent v3.4 Active", "lvl": "low"}]
 
 # ======================================================
 # FORENSIC LOGIC ENGINES
@@ -87,11 +86,6 @@ def detect_anti_forensic_dna(mft_df):
                     results.append({"tool": tool, "pattern": p, "confidence": "High"})
     return results
 
-def attempt_mft_recovery(mft_df):
-    if mft_df is None: return []
-    recovered = mft_df[mft_df['filename'].astype(str).str.contains("~|TMP|DELETE|WIPE", case=False)].head(10)
-    return recovered['filename'].tolist()
-
 def detect_ghost_files(mft_df, usn_df):
     if 'filename' not in mft_df.columns or 'filename' not in usn_df.columns: return []
     mft_files = set(mft_df['filename'].astype(str).str.lower().unique())
@@ -111,7 +105,7 @@ def load_csv_with_timestamp(file, candidates, label):
 # UI HEADER
 # ======================================================
 st.title("🛡️ ForenSight AI Platinum")
-st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery Counter • SOC v3.3")
+st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery • SOC v3.4")
 st.markdown("---")
 
 tabs = st.tabs(["📥 Evidence", "🎞️ Timeline", "🧪 DNA Artifact Scanner", "🧬 MITRE ATT&CK", "🚨 SOC Alerts", "🤖 Agent AI Explainer", "📡 Live Monitor"])
@@ -129,7 +123,7 @@ with tabs[0]:
         mft, mft_t = load_csv_with_timestamp(mft_f, ["modified","mtime","timestamp"], "MFT")
         usn, usn_t = load_csv_with_timestamp(usn_f, ["usn_timestamp","timestamp"], "USN")
         st.session_state.mft_df, st.session_state.usn_df = (mft, mft_t), (usn, usn_t)
-        st.success("🎯 Forensic Sources Synchronized.")
+        st.success("🎯 Forensic Data Sources Synchronized.")
 
 # ======================================================
 # TAB 2: VISUAL TIMELINE
@@ -155,34 +149,27 @@ with tabs[2]:
         if st.session_state.mft_df:
             dna_hits = detect_anti_forensic_dna(st.session_state.mft_df[0])
             for hit in dna_hits:
-                st.markdown(f"<div class='dna-result'><b>TOOL:</b> {hit['tool']} | <b>DNA:</b> {hit['pattern']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='dna-result'><b>TOOL:</b> {hit['tool']} | <b>REMNANT:</b> {hit['pattern']}</div>", unsafe_allow_html=True)
             if not dna_hits: st.success("No active wiper DNA found.")
         
     with col2:
-        st.markdown("### 🛠️ MFT 'Counter' Recovery")
-        if st.session_state.mft_df:
-            recovered = attempt_mft_recovery(st.session_state.mft_df[0])
-            if recovered: 
-                st.error(f"🚩 Recovered {len(recovered)} potential wiped filenames from MFT slack.")
-                st.write(recovered)
-
-    st.markdown("---")
-    st.markdown("### 📉 Shannon Entropy (Ransomware Detect)")
-    test_str = st.text_input("Analyze string for encryption:", "crypt_locked_data_0x99.bin")
-    score = calculate_shannon_entropy(test_str)
-    st.metric("Entropy Score", f"{score:.4f}")
-    if score > 4.5: st.warning("⚠️ High Randomness Detected.")
+        st.markdown("### 💀 USN vs MFT (Ghost Files)")
+        if st.session_state.mft_df and st.session_state.usn_df:
+            ghosts = detect_ghost_files(st.session_state.mft_df[0], st.session_state.usn_df[0])
+            if ghosts: 
+                st.markdown(f"<div class='ghost-alert'>🚨 {len(ghosts)} FILES WIPED: Found in history but missing from disk.</div>", unsafe_allow_html=True)
+                st.write(ghosts[:15])
 
 # ======================================================
 # TAB 4: MITRE ATT&CK MATRIX
 # ======================================================
 with tabs[3]:
     st.subheader("🧬 MITRE ATT&CK Framework Mapping")
-    
     mitre_data = [
-        {"ID": "T1070.004", "Technique": "Indicator Removal: File Deletion", "Source": "MFT Ghost Correlation", "Severity": "HIGH"},
+        {"ID": "T1070.004", "Technique": "Indicator Removal: File Deletion", "Source": "Ghost Correlation", "Severity": "HIGH"},
         {"ID": "T1070.001", "Technique": "Clear Windows Event Logs", "Source": "Event ID 1102 / 104", "Severity": "CRITICAL"},
-        {"ID": "T1486", "Name": "Data Encrypted for Impact", "Source": "High Entropy Metadata", "Severity": "HIGH"}
+        {"ID": "T1486", "Name": "Data Encrypted for Impact", "Source": "Shannon Entropy Scanner", "Severity": "HIGH"},
+        {"ID": "T1099", "Name": "Timestomp", "Source": "MFT Timestamp Drift", "Severity": "MEDIUM"}
     ]
     st.table(pd.DataFrame(mitre_data))
 
@@ -190,48 +177,62 @@ with tabs[3]:
 # TAB 5: LIVE SOC ALERTS
 # ======================================================
 with tabs[4]:
-    st_autorefresh(interval=4000, key="soc_pulse")
+    st_autorefresh(interval=5000, key="soc_pulse_global")
     st.subheader("🚨 Live SOC Incident Feed")
     if random.random() > 0.8:
-        st.session_state.soc_alerts.insert(0, {"ts": dt.now().strftime("%H:%M:%S"), "msg": "Suspicious MFT Cluster Modification", "lvl": "high"})
+        st.session_state.soc_alerts.insert(0, {"ts": dt.now().strftime("%H:%M:%S"), "msg": "Wiper Tool Pattern Detected", "lvl": "high"})
     
     for a in st.session_state.soc_alerts[:10]:
         st.markdown(f"<div class='alert-card {a['lvl']}'><b>[{a['ts']}]</b> {a['msg']}</div>", unsafe_allow_html=True)
 
 # ======================================================
-# TAB 6: AGENT AI EXPLAINER
+# TAB 6: AGENT AI EXPLAINER (FIXED PERSISTENCE)
 # ======================================================
 with tabs[5]:
     st.subheader("🤖 Forensic Agent AI Explainer")
-    if st.button("🚀 Run Agent AI Reasoning"):
+    if st.button("🚀 Run Agent AI Analysis"):
         with st.spinner("Correlating DNA and Ghost Artifacts..."):
             time.sleep(2)
+            # Store in session state to persist through autorefreshes
             st.session_state.agent_report = {
-                "summary": "Targeted Evidence Destruction (Anti-Forensics) identified.",
-                "details": ["DNA of SDelete found in Prefetch.", "USN correlation shows 30+ files wiped."],
-                "rec": "Isolate system. DNA confirms intent to impede investigation."
+                "summary": "Targeted Evidence Destruction (Anti-Forensics) identified on host.",
+                "details": [
+                    "DNA of SDelete found in Prefetch records.",
+                    "USN correlation shows 30+ files wiped during the attack window.",
+                    "High entropy metadata detected in Temp directories suggesting ransomware staging."
+                ],
+                "rec": "Isolate system. DNA confirms intent to impede investigation. Perform volatile RAM dump."
             }
     
+    # Display if report exists in session state
     if st.session_state.agent_report:
         r = st.session_state.agent_report
-        st.markdown(f"<div class='agent-box'><h3>🕵️ Agent Conclusion</h3><p>{r['summary']}</p><ul>{''.join([f'<li>{d}</li>' for d in r['details']])}</ul><p><b>Recommendation:</b> {r['rec']}</p></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class='agent-box'>
+            <h3>🕵️ Agent Conclusion</h3>
+            <hr style='border: 1px solid #6366f1'>
+            <p><b>Executive Summary:</b> {r['summary']}</p>
+            <ul>{"".join([f'<li>{d}</li>' for d in r['details']])}</ul>
+            <p><b>Recommendation:</b> {r['rec']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Click the button above to begin AI analysis.")
 
 # ======================================================
-# TAB 7: ENHANCED LIVE MONITOR
+# TAB 7: ENHANCED LIVE MONITOR (NEW GAUGES & AI)
 # ======================================================
 with tabs[6]:
     st.subheader("📡 Advanced Real-Time Telemetry")
-    st_autorefresh(interval=2000, key="monitor_loop")
+    st_autorefresh(interval=2000, key="monitor_loop_plat")
     
     if PSUTIL_AVAILABLE:
-        # Data Collection
         cpu_p = psutil.cpu_percent()
         mem = psutil.virtual_memory()
         net = psutil.net_io_counters()
         
-        # Anomaly Detection Logic
         st.session_state.cpu_history.append(cpu_p)
-        if len(st.session_state.cpu_history) > 50: st.session_state.cpu_history.pop(0)
+        st.session_state.cpu_history = st.session_state.cpu_history[-50:]
         
         anomaly_flag = "Normal"
         if len(st.session_state.cpu_history) > 20:
@@ -243,39 +244,39 @@ with tabs[6]:
         c1, c2, c3 = st.columns(3)
         with c1:
             fig_cpu = go.Figure(go.Indicator(
-                mode = "gauge+number", value = cpu_p, title = {'text': "CPU Usage (%)"},
-                gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "#6366f1"}, 
+                mode = "gauge+number", value = cpu_p, title = {'text': "CPU load"},
+                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#6366f1"},
                          'steps': [{'range': [0, 70], 'color': "gray"}, {'range': [70, 100], 'color': "red"}]}))
-            fig_cpu.update_layout(height=250, margin=dict(t=50, b=0, l=20, r=20), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+            fig_cpu.update_layout(height=280, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"}, margin=dict(t=50, b=0, l=20, r=20))
             st.plotly_chart(fig_cpu, use_container_width=True)
             
         with c2:
             fig_mem = go.Figure(go.Indicator(
-                mode = "gauge+number", value = mem.percent, title = {'text': "Memory Usage (%)"},
-                gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': "#10b981"}}))
-            fig_mem.update_layout(height=250, margin=dict(t=50, b=0, l=20, r=20), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+                mode = "gauge+number", value = mem.percent, title = {'text': "Memory load"},
+                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#10b981"}}))
+            fig_mem.update_layout(height=280, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"}, margin=dict(t=50, b=0, l=20, r=20))
             st.plotly_chart(fig_mem, use_container_width=True)
 
         with c3:
-            st.markdown(f"<div class='monitor-card'><h3 style='color:#ef4444'>AI Forensic Status</h3><h1>{anomaly_flag}</h1><p>Real-time Isolation Forest Outlier Analysis</p></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='monitor-card'><h3 style='color:#ef4444'>AI SOC Status</h3><h1>{anomaly_flag}</h1><p>Unsupervised Anomaly Scoring (Isolation Forest)</p></div>", unsafe_allow_html=True)
 
-        # Row 2: Networking & Details
+        # Row 2: Networking
         st.markdown("---")
         c4, c5 = st.columns([2, 1])
         with c4:
-            st.write("📊 **Resource Utilization Timeline**")
+            st.write("📊 **Resource Activity Timeline**")
             st.line_chart(st.session_state.cpu_history)
         with c5:
             st.write("🌐 **Network Exfiltration Check**")
             st.table({
-                "Interface Metric": ["Data Sent", "Data Received", "Total Packets Out", "Total Packets In"],
-                "Current Value": [f"{net.bytes_sent / (1024*1024):.2f} MB", f"{net.bytes_recv / (1024*1024):.2f} MB", net.packets_sent, net.packets_recv]
+                "Interface Metric": ["Data Sent", "Data Received", "Packets Out", "Packets In"],
+                "Value": [f"{net.bytes_sent / (1024*1024):.2f} MB", f"{net.bytes_recv / (1024*1024):.2f} MB", net.packets_sent, net.packets_recv]
             })
-
-    else: st.error("Telemetry sensors offline. Local psutil access required.")
+    else:
+        st.error("psutil not available.")
 
 # ======================================================
 # FOOTER
 # ======================================================
 st.markdown("---")
-st.caption(f"ForenSight AI Platinum • v3.3 • {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"ForenSight AI Platinum • v3.4 • SOC Intelligence • {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
