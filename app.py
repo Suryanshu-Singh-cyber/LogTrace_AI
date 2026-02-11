@@ -188,28 +188,167 @@ with tabs[4]:
 # ======================================================
 # TAB 6 — AGENT AI (FULLY FIXED)
 # ======================================================
+# ======================================================
+# TAB 6 — NEXT-GEN FORENSIC AGENT AI
+# ======================================================
 with tabs[5]:
-    st.subheader("🤖 Agent AI Analysis")
+    st.subheader("🤖 Forensic Agent AI — Advanced Intelligence Engine")
 
-    if st.button("Run Agent AI"):
-        st.session_state.agent_report = {
-            "summary": "Targeted Anti-Forensics Confirmed",
-            "details": [
-                "SDelete artifact pattern located.",
-                "USN ghost file mismatch detected.",
-                "High entropy metadata spike observed."
-            ],
-            "rec": "Isolate endpoint and capture RAM."
-        }
+    # -----------------------------
+    # Mode Toggle
+    # -----------------------------
+    view_mode = st.radio(
+        "Report View Mode:",
+        ["SOC Technical Mode", "Executive Board Mode"],
+        horizontal=True
+    )
 
+    # -----------------------------
+    # Run Agent Button
+    # -----------------------------
+    if st.button("🚀 Run Deep Forensic Analysis"):
+
+        with st.spinner("Performing Multi-Layer Artifact Correlation..."):
+            time.sleep(2)
+
+            dna_hits = []
+            ghost_files = []
+            entropy_score = 0
+
+            # ---- Gather Evidence Signals ----
+            if st.session_state.mft_df:
+                mft_data = st.session_state.mft_df[0]
+                dna_hits = detect_anti_forensic_dna(mft_data)
+
+                # Entropy scan (simulate suspicious randomness)
+                if "filename" in mft_data.columns:
+                    entropy_values = mft_data["filename"].astype(str).apply(calculate_shannon_entropy)
+                    entropy_score = round(entropy_values.mean(), 2)
+
+            if st.session_state.mft_df and st.session_state.usn_df:
+                ghost_files = detect_ghost_files(
+                    st.session_state.mft_df[0],
+                    st.session_state.usn_df[0]
+                )
+
+            # ---- Weighted Risk Scoring ----
+            risk_score = 0
+
+            risk_score += len(dna_hits) * 25
+            risk_score += len(ghost_files) * 2
+            risk_score += entropy_score * 5
+
+            risk_score = min(int(risk_score), 100)
+
+            # ---- Threat Classification ----
+            if len(dna_hits) > 0 and len(ghost_files) > 10:
+                threat_type = "Intentional Anti-Forensics Activity"
+                mitre = ["T1070.004", "T1564", "T1107"]
+            elif entropy_score > 4.5:
+                threat_type = "Possible Ransomware Staging"
+                mitre = ["T1486", "T1027"]
+            elif len(ghost_files) > 20:
+                threat_type = "Mass File Deletion Event"
+                mitre = ["T1070.004"]
+            else:
+                threat_type = "Suspicious Artifact Pattern"
+                mitre = ["T1083"]
+
+            confidence = min(95, 50 + risk_score // 2)
+
+            # ---- Save Report to Session State ----
+            st.session_state.agent_report = {
+                "risk_score": risk_score,
+                "threat": threat_type,
+                "confidence": confidence,
+                "dna": dna_hits,
+                "ghosts": len(ghost_files),
+                "entropy": entropy_score,
+                "mitre": mitre,
+                "timestamp": dt.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+
+    # -----------------------------
+    # Display Report
+    # -----------------------------
     if st.session_state.agent_report:
+
         r = st.session_state.agent_report
-        st.success(r["summary"])
-        for d in r["details"]:
-            st.write("•", d)
-        st.info("Recommendation: " + r["rec"])
+
+        st.markdown("---")
+
+        # -----------------------------
+        # Risk Meter
+        # -----------------------------
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Threat Score", f"{r['risk_score']} / 100")
+        col2.metric("Confidence", f"{r['confidence']}%")
+        col3.metric("Entropy Avg", r["entropy"])
+
+        # -----------------------------
+        # Threat Banner
+        # -----------------------------
+        if r["risk_score"] > 70:
+            st.error(f"🚨 HIGH RISK INCIDENT: {r['threat']}")
+        elif r["risk_score"] > 40:
+            st.warning(f"⚠ MEDIUM RISK: {r['threat']}")
+        else:
+            st.success(f"ℹ LOW RISK: {r['threat']}")
+
+        # -----------------------------
+        # SOC Technical Mode
+        # -----------------------------
+        if view_mode == "SOC Technical Mode":
+
+            st.markdown("### 🔬 Technical Findings")
+
+            st.write(f"• Tool DNA Hits: {len(r['dna'])}")
+            for d in r["dna"]:
+                st.write(f"   - {d['tool']} ({d['pattern']})")
+
+            st.write(f"• Ghost Files Detected: {r['ghosts']}")
+            st.write(f"• Mean Filename Entropy: {r['entropy']}")
+
+            st.markdown("### 🧬 MITRE ATT&CK Mapping")
+            for m in r["mitre"]:
+                st.markdown(f"<span class='mitre-badge'>{m}</span>", unsafe_allow_html=True)
+
+            st.markdown("### 🛡 Recommended Response")
+            if r["risk_score"] > 70:
+                st.write("• Immediate host isolation")
+                st.write("• Capture volatile memory")
+                st.write("• Acquire disk image for deep analysis")
+            else:
+                st.write("• Continue monitoring")
+                st.write("• Validate recent admin activity")
+
+        # -----------------------------
+        # Executive Mode
+        # -----------------------------
+        else:
+            st.markdown("### 📊 Executive Summary")
+
+            st.write(f"""
+            The forensic engine has detected **{r['threat']}** on the analyzed endpoint.
+
+            Risk Level: **{r['risk_score']}/100**
+
+            Confidence Level: **{r['confidence']}%**
+
+            The system recommends immediate containment if risk exceeds 70.
+            """)
+
+            st.markdown("### 📈 Business Impact Estimate")
+            if r["risk_score"] > 70:
+                st.error("High probability of deliberate evidence destruction or ransomware staging.")
+            elif r["risk_score"] > 40:
+                st.warning("Suspicious activity detected. Further investigation recommended.")
+            else:
+                st.success("No immediate critical threat detected.")
+
     else:
-        st.info("Run Agent AI to generate report.")
+        st.info("Click 'Run Deep Forensic Analysis' to generate an AI investigation report.")
+
 
 # ======================================================
 # TAB 7 — LIVE MONITOR (STABLE MODEL)
