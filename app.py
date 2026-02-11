@@ -101,9 +101,26 @@ def load_csv_with_timestamp(file, candidates, label):
 # ======================================================
 # UI HEADER
 # ======================================================
+# ======================================================
+# PROJECT SUMMARY
+# ======================================================
+st.markdown("""
+<div style="background-color:#111111;
+            padding:15px;
+            border-radius:10px;
+            border-left:5px solid #00FFC6;
+            margin-bottom:15px;">
+
+<b>Trinetra AI</b> is an intelligent DFIR (Digital Forensics & Incident Response) platform 
+that analyzes MFT, USN, and Security logs to detect anti-forensic activity, 
+behavioral anomalies, ransomware indicators, and suspicious execution patterns 
+using AI-powered risk scoring and real-time system monitoring.
+
+</div>
+""", unsafe_allow_html=True)
+
 st.title("🔱 Trinetra AI")
 st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery • SOC v3.5")
-st.markdown("---")
 
 tabs = st.tabs([
     "📥 Evidence",
