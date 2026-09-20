@@ -1,4 +1,4 @@
-# TRINETRA AI v3.6 (FIXED STABLE BUILD)
+# TRINETRA AI v3.7 (FULLY FIXED STABLE BUILD)
 
 # ======================================================
 import datetime
@@ -46,7 +46,7 @@ defaults = {
     "agent_report": None,
     "cpu_history": [],
     "soc_alerts": [{"ts": dt.now().strftime("%H:%M:%S"),
-                    "msg": "Forensic Agent v3.6 Active",
+                    "msg": "Forensic Agent v3.7 Active",
                     "lvl": "low"}],
     "iso_model": None,
     "iso_trained": False
@@ -60,6 +60,7 @@ for k, v in defaults.items():
 # FORENSIC ENGINES
 # ======================================================
 def calculate_shannon_entropy(text):
+    """Calculate Shannon Entropy of a string"""
     if not text or not isinstance(text, str):
         return 0
     probs = [n_x / len(text) for x, n_x in Counter(text).items()]
@@ -67,6 +68,7 @@ def calculate_shannon_entropy(text):
 
 
 def detect_anti_forensic_dna(mft_df):
+    """Detect known anti-forensic tools by filename patterns"""
     results = []
     wipers = {
         "SDelete": ["sdelete", "p_sdelete", "zzzzzz", "wipefile"],
@@ -84,15 +86,17 @@ def detect_anti_forensic_dna(mft_df):
 
 
 def detect_ghost_files(mft_df, usn_df):
+    """Detect files present in USN but missing in MFT"""
     if "filename" not in mft_df.columns or "filename" not in usn_df.columns:
         return []
     mft_files = set(mft_df["filename"].astype(str).str.lower())
     usn_files = set(usn_df["filename"].astype(str).str.lower())
     ghosts = usn_files - mft_files
-    return [g for g in ghosts if g not in ["nan", "none", ".", "unknown"]]
+    return [g for g in ghosts if g not in ["nan", "none", ".", "unknown", ""]]
 
 
 def load_csv_with_timestamp(file, candidates, label):
+    """Load CSV and auto-detect timestamp column"""
     df = pd.read_csv(file)
     df.columns = df.columns.str.lower().str.strip()
     col = next((c for c in candidates if c in df.columns), None)
@@ -103,14 +107,12 @@ def load_csv_with_timestamp(file, candidates, label):
 
 
 def get_df(key):
-    """Safely get dataframe from session state (handles tuple storage)"""
+    """Safely get DataFrame from session state (handles tuple storage)"""
     data = st.session_state.get(key)
     if data is None:
         return None
-    # If stored as tuple (df, column_name), return just the df
     if isinstance(data, tuple):
         return data[0] if len(data) > 0 else None
-    # If stored as list
     if isinstance(data, list):
         return data[0] if len(data) > 0 else None
     return data
@@ -135,7 +137,7 @@ using AI-powered risk scoring and real-time system monitoring.
 """, unsafe_allow_html=True)
 
 st.title("🔱 Trinetra AI")
-st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery • SOC v3.6")
+st.caption("Agent-Driven DFIR • Tool DNA Scanner • MFT Recovery • SOC v3.7")
 
 tabs = st.tabs([
     "📥 Evidence",
@@ -162,14 +164,14 @@ with tabs[0]:
     if mft_f and usn_f:
         try:
             mft, mft_t = load_csv_with_timestamp(
-                mft_f, ["modified", "mtime", "timestamp"], "MFT"
+                mft_f, ["modified", "mtime", "timestamp", "created"], "MFT"
             )
             usn, usn_t = load_csv_with_timestamp(
-                usn_f, ["usn_timestamp", "timestamp"], "USN"
+                usn_f, ["usn_timestamp", "timestamp", "modified"], "USN"
             )
             st.session_state.mft_df = (mft, mft_t)
             st.session_state.usn_df = (usn, usn_t)
-            st.success("🎯 MFT + USN Data Synchronized")
+            st.success(f"🎯 MFT + USN Data Synchronized ({len(mft)} + {len(usn)} records)")
         except Exception as e:
             st.error(f"Error loading MFT/USN: {e}")
 
@@ -178,7 +180,7 @@ with tabs[0]:
             sec = pd.read_csv(log_f)
             sec.columns = sec.columns.str.lower().str.strip()
             st.session_state.security_df = sec
-            st.success("🎯 Security Logs Loaded")
+            st.success(f"🎯 Security Logs Loaded ({len(sec)} records)")
         except Exception as e:
             st.error(f"Error loading Security Logs: {e}")
 
@@ -191,8 +193,10 @@ with tabs[1]:
         mft_col = st.session_state.mft_df[1] if isinstance(st.session_state.mft_df, tuple) else "timestamp"
         if mft_col in mft_data.columns:
             df = mft_data.sort_values(by=mft_col).tail(25)
-            fig = px.scatter(df, x=mft_col, y="filename",
-                             color="filename", template="plotly_dark")
+            fig = px.scatter(
+                df, x=mft_col, y="filename",
+                color="filename", template="plotly_dark"
+            )
             fig.update_layout(showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -233,7 +237,7 @@ with tabs[4]:
     if random.random() > 0.85:
         st.session_state.soc_alerts.insert(0, {
             "ts": dt.now().strftime("%H:%M:%S"),
-            "msg": "Trinetra AI v3.6 Active",
+            "msg": "Trinetra AI v3.7 Active",
             "lvl": "high"
         })
 
@@ -241,7 +245,7 @@ with tabs[4]:
         st.write(f"[{a['ts']}] {a['msg']}")
 
 # ======================================================
-# TAB 6 — AGENT AI (FULLY FIXED)
+# TAB 6 — AGENT AI (FULLY FIXED + NORMALIZED RISK)
 # ======================================================
 with tabs[5]:
     st.subheader("🤖 Forensic Agent AI — Behavioral Intelligence Engine")
@@ -274,7 +278,9 @@ with tabs[5]:
                 anomaly_users = []
                 suspicious_exec = 0
 
+                # -------------------------
                 # MFT Analysis
+                # -------------------------
                 if mft_data is not None and not mft_data.empty:
                     suspicious_keywords = ["wipe", "delete", "clean", "cipher", "encrypt"]
                     if "filename" in mft_data.columns:
@@ -290,14 +296,18 @@ with tabs[5]:
                         entropy_values = sample.apply(calculate_shannon_entropy)
                         entropy_score = round(entropy_values.mean(), 2)
 
+                # -------------------------
                 # Ghost File Detection
+                # -------------------------
                 if mft_data is not None and usn_data is not None:
                     try:
                         ghost_files = detect_ghost_files(mft_data, usn_data)
                     except Exception:
                         ghost_files = []
 
+                # -------------------------
                 # Security Log Behavior
+                # -------------------------
                 if sec_data is not None and not sec_data.empty:
                     if "user" in sec_data.columns:
                         user_counts = sec_data["user"].value_counts()
@@ -311,20 +321,49 @@ with tabs[5]:
                             sec_data["event_id"].isin([4688, 1102])
                         ].shape[0]
 
-                # Weighted Risk Engine
-                risk_score = 0
-                risk_score += len(dna_hits) * 8
-                risk_score += len(ghost_files) * 1.5
-                risk_score += entropy_score * 4
-                risk_score += len(anomaly_users) * 10
-                risk_score += suspicious_exec * 2
+                # -------------------------
+                # NORMALIZED WEIGHTED RISK ENGINE
+                # -------------------------
+                
+                # 1. DNA Score (0-100): each hit = 10 points, max 100
+                dna_score = min(len(dna_hits) * 10, 100)
+                
+                # 2. Ghost Score (0-100): ratio of ghosts to total USN entries
+                ghost_ratio = 0
+                if usn_data is not None and len(usn_data) > 0:
+                    ghost_ratio = len(ghost_files) / len(usn_data)
+                ghost_score = min(ghost_ratio * 100, 100)
+                
+                # 3. Entropy Score (0-100): normalized (8.0 = max randomness)
+                entropy_score_norm = min((entropy_score / 8.0) * 100, 100)
+                
+                # 4. User Score (0-100): each anomalous user = 20 points
+                user_score = min(len(anomaly_users) * 20, 100)
+                
+                # 5. Exec Score (0-100): ratio of suspicious events to total
+                exec_ratio = 0
+                if sec_data is not None and len(sec_data) > 0:
+                    exec_ratio = suspicious_exec / len(sec_data)
+                exec_score = min(exec_ratio * 100, 100)
+                
+                # Weighted combination (weights sum to 1.0)
+                risk_score = (
+                    dna_score * 0.35 +           # 35% - tool indicators
+                    ghost_score * 0.15 +         # 15% - ghost file ratio
+                    entropy_score_norm * 0.20 +  # 20% - encryption
+                    user_score * 0.10 +          # 10% - user behavior
+                    exec_score * 0.20            # 20% - process execution
+                )
+                
                 risk_score = min(int(risk_score), 100)
 
+                # -------------------------
                 # Threat Classification
-                if entropy_score > 5 and len(ghost_files) > 20:
+                # -------------------------
+                if entropy_score > 5 and ghost_ratio > 0.3:
                     threat_type = "Ransomware Pre-Encryption Activity"
                     mitre = ["T1486", "T1070.004", "T1027"]
-                elif suspicious_exec > 30:
+                elif exec_ratio > 0.3:
                     threat_type = "Suspicious Process Execution Spike"
                     mitre = ["T1059", "T1106"]
                 elif len(anomaly_users) > 0:
@@ -345,16 +384,20 @@ with tabs[5]:
                     "confidence": confidence,
                     "dna": dna_hits,
                     "ghosts": len(ghost_files) if isinstance(ghost_files, list) else 0,
+                    "ghost_ratio": round(ghost_ratio * 100, 1),
                     "entropy": entropy_score,
                     "anomaly_users": anomaly_users,
                     "suspicious_exec": suspicious_exec,
+                    "exec_ratio": round(exec_ratio * 100, 1),
                     "mitre": mitre,
                     "timestamp": dt.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
 
                 st.success("✅ Analysis complete!")
 
+    # -----------------------------
     # Display Report
+    # -----------------------------
     report = st.session_state.get("agent_report")
 
     if report:
@@ -372,12 +415,13 @@ with tabs[5]:
         else:
             st.success(f"✅ LOW RISK: {report['threat']}")
 
+        # SOC Technical Mode
         if view_mode == "SOC Technical Mode":
             st.markdown("### 🔬 Technical Breakdown")
             st.write(f"• Tool Pattern Hits: {len(report['dna'])}")
-            st.write(f"• Ghost Files: {report['ghosts']}")
+            st.write(f"• Ghost Files: {report['ghosts']} ({report.get('ghost_ratio', 0)}% of USN)")
             st.write(f"• High-Frequency Users: {len(report['anomaly_users'])}")
-            st.write(f"• Suspicious Process Events: {report['suspicious_exec']}")
+            st.write(f"• Suspicious Process Events: {report['suspicious_exec']} ({report.get('exec_ratio', 0)}% of logs)")
             st.write(f"• Mean Filename Entropy: {report['entropy']}")
 
             st.markdown("### 🧬 MITRE ATT&CK Mapping")
@@ -399,6 +443,7 @@ with tabs[5]:
             else:
                 st.write("• Continue baseline monitoring")
 
+        # Executive Mode
         else:
             st.markdown("### 📊 Executive Summary")
             st.write(f"""
@@ -466,4 +511,4 @@ with tabs[6]:
 # FOOTER
 # ======================================================
 st.markdown("---")
-st.caption(f"Trinetra AI v3.6 • {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"Trinetra AI v3.7 • {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
